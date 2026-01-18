@@ -9,12 +9,18 @@ interface AppBatteryDrainChartProps {
   currentSort?: 'hours' | 'drain' | 'sessions' | 'devices'
 }
 
-const COLORS = {
-  hours: '#3b82f6',
-  drain: '#ef4444',
-  sessions: '#22c55e',
-  devices: '#8b5cf6',
+function getCssVar(name: string): string {
+  if (typeof window === 'undefined') return '#888'
+  const style = getComputedStyle(document.documentElement)
+  return style.getPropertyValue(name).trim() || '#888'
 }
+
+const getColors = () => ({
+  hours: getCssVar('--chart-1'),
+  drain: getCssVar('--destructive'),
+  sessions: getCssVar('--chart-2'),
+  devices: getCssVar('--chart-3'),
+})
 
 function formatHours(hours: number): string {
   if (hours < 1) return `${Math.round(hours * 60)}m`
@@ -26,12 +32,14 @@ function formatDrain(drain: number): string {
   return `${drain.toFixed(0)}%/hr`
 }
 
-export function AppBatteryDrainChart({ 
-  data, 
+export function AppBatteryDrainChart({
+  data,
   title = "App Battery Impact",
   onSortChange,
   currentSort = 'hours'
 }: AppBatteryDrainChartProps) {
+  const COLORS = getColors()
+
   const maxValue = Math.max(...data.map(d => {
     switch (currentSort) {
       case 'hours': return d.total_hours

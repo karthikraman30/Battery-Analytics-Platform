@@ -9,6 +9,12 @@ interface CarbonTrendsChartProps {
   title?: string
 }
 
+function getCssVar(name: string): string {
+  if (typeof window === 'undefined') return '#888'
+  const style = getComputedStyle(document.documentElement)
+  return style.getPropertyValue(name).trim() || '#888'
+}
+
 export function CarbonTrendsChart({ data, title = "Daily CO2 Emissions" }: CarbonTrendsChartProps) {
   const chartRef = useRef<HTMLDivElement>(null)
   const uplotRef = useRef<uPlot | null>(null)
@@ -33,6 +39,10 @@ export function CarbonTrendsChart({ data, title = "Daily CO2 Emissions" }: Carbo
     const maxCO2 = Math.max(...co2Values, 1)
     const maxSessions = Math.max(...sessionCounts, 1)
 
+    const borderColor = getCssVar('--border')
+    const chart1Color = getCssVar('--chart-1')
+    const chart2Color = getCssVar('--chart-2')
+
     const opts: uPlot.Options = {
       width: chartRef.current.clientWidth,
       height: 300,
@@ -46,18 +56,18 @@ export function CarbonTrendsChart({ data, title = "Daily CO2 Emissions" }: Carbo
       },
       axes: [
         {
-          stroke: '#888',
-          grid: { stroke: '#e5e5e5', width: 1 },
+          stroke: borderColor,
+          grid: { stroke: borderColor, width: 1 },
         },
         {
-          stroke: '#22c55e',
-          grid: { stroke: '#e5e5e5', width: 1 },
+          stroke: chart1Color,
+          grid: { stroke: borderColor, width: 1 },
           label: 'CO2 (grams)',
           labelSize: 14,
           side: 3,
         },
         {
-          stroke: '#3b82f6',
+          stroke: chart2Color,
           label: 'Sessions',
           labelSize: 14,
           scale: 'sessions',
@@ -69,14 +79,14 @@ export function CarbonTrendsChart({ data, title = "Daily CO2 Emissions" }: Carbo
         {},
         {
           label: 'CO2 (g)',
-          stroke: '#22c55e',
+          stroke: chart1Color,
           width: 2,
-          fill: 'rgba(34, 197, 94, 0.15)',
+          fill: `${chart1Color}15`,
           points: { show: false },
         },
         {
           label: 'Sessions',
-          stroke: '#3b82f6',
+          stroke: chart2Color,
           width: 2,
           dash: [5, 5],
           scale: 'sessions',

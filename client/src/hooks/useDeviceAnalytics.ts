@@ -9,6 +9,7 @@ import type {
   BatteryDistribution,
   DateRangeParams,
 } from '@/lib/api'
+import { useDataSource } from '@/contexts/DataSourceContext'
 
 export function useBatteryTimeSeries(
   deviceId: string | null, 
@@ -16,11 +17,12 @@ export function useBatteryTimeSeries(
   granularity: 'raw' | 'hour' | 'day' = 'raw',
   dateRange?: DateRangeParams
 ) {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['batteryTimeSeries', deviceId, groupId, granularity, dateRange?.startDate, dateRange?.endDate],
+    queryKey: ['batteryTimeSeries', deviceId, groupId, granularity, dateRange?.startDate, dateRange?.endDate, dataSource],
     queryFn: async () => {
       if (!deviceId || !groupId) return []
-      const response = await analyticsApi.getBatteryTimeSeries(deviceId, groupId, granularity, dateRange)
+      const response = await analyticsApi.getBatteryTimeSeries(deviceId, groupId, granularity, dateRange, dataSource)
       return response.data
     },
     enabled: !!deviceId && !!groupId,
@@ -32,11 +34,12 @@ export function useChargingSessions(
   groupId: string | null,
   dateRange?: DateRangeParams
 ) {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['chargingSessions', deviceId, groupId, dateRange?.startDate, dateRange?.endDate],
+    queryKey: ['chargingSessions', deviceId, groupId, dateRange?.startDate, dateRange?.endDate, dataSource],
     queryFn: async () => {
       if (!deviceId || !groupId) return []
-      const response = await analyticsApi.getChargingSessions(deviceId, groupId, dateRange)
+      const response = await analyticsApi.getChargingSessions(deviceId, groupId, dateRange, dataSource)
       return response.data
     },
     enabled: !!deviceId && !!groupId,
@@ -48,11 +51,12 @@ export function useChargingStats(
   groupId: string | null,
   dateRange?: DateRangeParams
 ) {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['chargingStats', deviceId, groupId, dateRange?.startDate, dateRange?.endDate],
+    queryKey: ['chargingStats', deviceId, groupId, dateRange?.startDate, dateRange?.endDate, dataSource],
     queryFn: async () => {
       if (!deviceId || !groupId) return null
-      const response = await analyticsApi.getChargingStats(deviceId, groupId, dateRange)
+      const response = await analyticsApi.getChargingStats(deviceId, groupId, dateRange, dataSource)
       return response.data
     },
     enabled: !!deviceId && !!groupId,
@@ -64,13 +68,15 @@ export function useChargingPatterns(
   groupId?: string | null,
   dateRange?: DateRangeParams
 ) {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['chargingPatterns', deviceId, groupId, dateRange?.startDate, dateRange?.endDate],
+    queryKey: ['chargingPatterns', deviceId, groupId, dateRange?.startDate, dateRange?.endDate, dataSource],
     queryFn: async () => {
       const response = await analyticsApi.getChargingPatterns(
         deviceId || undefined,
         groupId || undefined,
-        dateRange
+        dateRange,
+        dataSource
       )
       return response.data
     },
@@ -83,11 +89,12 @@ export function useAppUsage(
   limit = 20,
   dateRange?: DateRangeParams
 ) {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['appUsage', deviceId, groupId, limit, dateRange?.startDate, dateRange?.endDate],
+    queryKey: ['appUsage', deviceId, groupId, limit, dateRange?.startDate, dateRange?.endDate, dataSource],
     queryFn: async () => {
       if (!deviceId || !groupId) return []
-      const response = await analyticsApi.getAppUsage(deviceId, groupId, limit, dateRange)
+      const response = await analyticsApi.getAppUsage(deviceId, groupId, limit, dateRange, dataSource)
       return response.data
     },
     enabled: !!deviceId && !!groupId,
@@ -99,13 +106,15 @@ export function useBatteryDistribution(
   groupId?: string | null,
   dateRange?: DateRangeParams
 ) {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['batteryDistribution', deviceId, groupId, dateRange?.startDate, dateRange?.endDate],
+    queryKey: ['batteryDistribution', deviceId, groupId, dateRange?.startDate, dateRange?.endDate, dataSource],
     queryFn: async () => {
       const response = await analyticsApi.getBatteryDistribution(
         deviceId || undefined,
         groupId || undefined,
-        dateRange
+        dateRange,
+        dataSource
       )
       return response.data
     },

@@ -13,6 +13,7 @@ PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PGDATA_DIR="$PROJECT_DIR/pgdata"
 CONTAINER_NAME="timescaledb"
 DB_NAME="battery_analytics"
+DB_NAME_GROUPED="battery_analytics_grouped"
 DB_USER="postgres"
 DB_PASSWORD="postgres"
 TUNNEL_PORT=5433
@@ -107,6 +108,20 @@ SSHCONFIG
     fi
 }
 
+create_grouped_database() {
+    log_info "Creating grouped database ($DB_NAME_GROUPED) if not exists..."
+    
+    # Check if database exists
+    EXISTS=$(docker exec $CONTAINER_NAME psql -U $DB_USER -d postgres -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME_GROUPED'" 2>/dev/null)
+    
+    if [ "$EXISTS" = "1" ]; then
+        log_info "Database '$DB_NAME_GROUPED' already exists"
+    else
+        docker exec $CONTAINER_NAME psql -U $DB_USER -d postgres -c "CREATE DATABASE $DB_NAME_GROUPED;" 2>/dev/null
+        log_info "✓ Created database '$DB_NAME_GROUPED'"
+    fi
+}
+
 verify_connection() {
     log_info "Testing database connection..."
     
@@ -123,6 +138,9 @@ verify_connection() {
     if [ -n "$VERSION" ]; then
         log_info "✓ TimescaleDB version: $VERSION"
     fi
+    
+    # Create grouped database
+    create_grouped_database
 }
 
 stop_services() {
@@ -166,18 +184,27 @@ show_status() {
         echo -e "SSH Tunnel:  ${RED}Not active${NC}"
     fi
     
-    # Database connection test
+    # Database connection test (consolidated)
     if docker exec $CONTAINER_NAME psql -U $DB_USER -d $DB_NAME -c "SELECT 1" &>/dev/null 2>&1; then
         TABLES=$(docker exec $CONTAINER_NAME psql -U $DB_USER -d $DB_NAME -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | tr -d ' ')
-        echo -e "Database:    ${GREEN}Connected${NC} ($TABLES tables)"
+        echo -e "DB (consolidated): ${GREEN}Connected${NC} ($TABLES tables)"
     else
-        echo -e "Database:    ${RED}Not accessible${NC}"
+        echo -e "DB (consolidated): ${RED}Not accessible${NC}"
+    fi
+    
+    # Database connection test (grouped)
+    if docker exec $CONTAINER_NAME psql -U $DB_USER -d $DB_NAME_GROUPED -c "SELECT 1" &>/dev/null 2>&1; then
+        TABLES_G=$(docker exec $CONTAINER_NAME psql -U $DB_USER -d $DB_NAME_GROUPED -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | tr -d ' ')
+        echo -e "DB (grouped):      ${GREEN}Connected${NC} ($TABLES_G tables)"
+    else
+        echo -e "DB (grouped):      ${YELLOW}Not initialized${NC}"
     fi
     
     echo ""
     echo "Connection strings:"
-    echo "  Docker exec: docker exec $CONTAINER_NAME psql -U $DB_USER -d $DB_NAME"
-    echo "  Node.js:     postgresql://$DB_USER:$DB_PASSWORD@localhost:$TUNNEL_PORT/$DB_NAME"
+    echo "  Docker exec:       docker exec $CONTAINER_NAME psql -U $DB_USER -d $DB_NAME"
+    echo "  Consolidated:      postgresql://$DB_USER:$DB_PASSWORD@localhost:$TUNNEL_PORT/$DB_NAME"
+    echo "  Grouped:           postgresql://$DB_USER:$DB_PASSWORD@localhost:$TUNNEL_PORT/$DB_NAME_GROUPED"
     echo ""
 }
 

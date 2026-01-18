@@ -15,6 +15,12 @@ interface BatteryDistributionChartProps {
   title?: string
 }
 
+function getCssVar(name: string): string {
+  if (typeof window === 'undefined') return '#888'
+  const style = getComputedStyle(document.documentElement)
+  return style.getPropertyValue(name).trim() || '#888'
+}
+
 export function BatteryDistributionChart({ 
   data, 
   title = "Battery Level Distribution" 
@@ -32,6 +38,9 @@ export function BatteryDistributionChart({
     if (batteryRange < 80) return '#84cc16'
     return '#22c55e'
   }
+
+  const borderColor = getCssVar('--border')
+  const foregroundColor = getCssVar('--foreground')
 
   if (data.length === 0) {
     return (
@@ -60,13 +69,16 @@ export function BatteryDistributionChart({
       <CardContent>
         <ResponsiveContainer width="100%" height={300}>
           <BarChart data={chartData}>
-            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={borderColor} />
             <XAxis 
               dataKey="range" 
-              tick={{ fontSize: 12 }}
+              tick={{ fontSize: 12, fill: foregroundColor }}
+              stroke={borderColor}
             />
             <YAxis 
-              label={{ value: 'Count', angle: -90, position: 'insideLeft' }}
+              label={{ value: 'Count', angle: -90, position: 'insideLeft', fill: foregroundColor }}
+              tick={{ fill: foregroundColor }}
+              stroke={borderColor}
             />
             <Tooltip
               formatter={(value) => [(value as number).toLocaleString(), 'Events']}

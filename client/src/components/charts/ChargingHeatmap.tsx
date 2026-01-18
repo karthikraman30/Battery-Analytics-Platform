@@ -11,6 +11,23 @@ const HOURS = Array.from({ length: 24 }, (_, i) =>
   i === 0 ? '12a' : i < 12 ? `${i}a` : i === 12 ? '12p' : `${i - 12}p`
 )
 
+function getCssVar(name: string): string {
+  if (typeof window === 'undefined') return '#888'
+  const style = getComputedStyle(document.documentElement)
+  return style.getPropertyValue(name).trim() || '#888'
+}
+
+function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
+  // Handle oklch or other color formats by falling back to a default
+  if (!hex.startsWith('#')) {
+    return { r: 59, g: 130, b: 246 } // fallback blue
+  }
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+  return result
+    ? { r: parseInt(result[1], 16), g: parseInt(result[2], 16), b: parseInt(result[3], 16) }
+    : null
+}
+
 export function ChargingHeatmap({ data, title = "Charging Patterns" }: ChargingHeatmapProps) {
   const matrix: number[][] = Array.from({ length: 7 }, () => Array(24).fill(0))
   
@@ -25,14 +42,23 @@ export function ChargingHeatmap({ data, title = "Charging Patterns" }: ChargingH
   })
 
   const getColor = (value: number): string => {
-    if (maxCount === 0) return 'rgba(59, 130, 246, 0.1)'
+    const chartColor = getCssVar('--chart-1')
+    const rgb = hexToRgb(chartColor)
+    if (!rgb || maxCount === 0) return `rgba(59, 130, 246, 0.1)`
     const intensity = value / maxCount
-    return `rgba(59, 130, 246, ${intensity * 0.85 + 0.1})`
+    return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${intensity * 0.85 + 0.1})`
   }
 
   const getTextColor = (value: number): string => {
     if (maxCount === 0) return 'inherit'
     return value / maxCount > 0.5 ? 'white' : 'inherit'
+  }
+
+  const getLegendColor = (intensity: number): string => {
+    const chartColor = getCssVar('--chart-1')
+    const rgb = hexToRgb(chartColor)
+    if (!rgb) return `rgba(59, 130, 246, ${intensity})`
+    return `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${intensity})`
   }
 
   if (data.length === 0) {
@@ -105,7 +131,7 @@ export function ChargingHeatmap({ data, title = "Charging Patterns" }: ChargingH
               <div
                 key={intensity}
                 className="h-3 w-3 rounded-sm"
-                style={{ background: `rgba(59, 130, 246, ${intensity})` }}
+                style={{ background: getLegendColor(intensity) }}
               />
             ))}
           </div>

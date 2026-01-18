@@ -9,6 +9,12 @@ interface ChargingSessionsChartProps {
   title?: string
 }
 
+function getCssVar(name: string): string {
+  if (typeof window === 'undefined') return '#888'
+  const style = getComputedStyle(document.documentElement)
+  return style.getPropertyValue(name).trim() || '#888'
+}
+
 interface ProcessedSession {
   duration: number
   chargeGained: number
@@ -56,6 +62,9 @@ export function ChargingSessionsChart({ data, title = "Charging Sessions" }: Cha
     const minGain = Math.min(...chargeGained, -10)
     const maxGain = Math.max(...chargeGained, 100)
 
+    const borderColor = getCssVar('--border')
+    const chart1Color = getCssVar('--chart-1')
+
     const opts: uPlot.Options = {
       width: chartRef.current.clientWidth,
       height: 400,
@@ -64,29 +73,29 @@ export function ChargingSessionsChart({ data, title = "Charging Sessions" }: Cha
         drag: { x: true, y: true },
         points: {
           size: 8,
-          fill: '#3b82f6',
+          fill: chart1Color,
         },
       },
       scales: {
-        x: { 
+        x: {
           time: false,
           range: [0, maxDuration * 1.1],
         },
-        y: { 
+        y: {
           range: [Math.min(minGain - 10, -10), Math.max(maxGain + 10, 110)],
         },
       },
       axes: [
         {
-          stroke: '#888',
-          grid: { stroke: '#e5e5e5', width: 1 },
+          stroke: borderColor,
+          grid: { stroke: borderColor, width: 1 },
           label: 'Duration (minutes)',
           labelSize: 14,
           values: (_u, vals) => vals.map(v => `${Math.round(v)} min`),
         },
         {
-          stroke: '#888',
-          grid: { stroke: '#e5e5e5', width: 1 },
+          stroke: borderColor,
+          grid: { stroke: borderColor, width: 1 },
           label: 'Charge Gained (%)',
           labelSize: 14,
           values: (_u, vals) => vals.map(v => `${Math.round(v)}%`),
@@ -98,14 +107,14 @@ export function ChargingSessionsChart({ data, title = "Charging Sessions" }: Cha
         },
         {
           label: 'Charge Gained',
-          stroke: '#3b82f6',
-          fill: 'rgba(59, 130, 246, 0.6)',
+          stroke: chart1Color,
+          fill: `${chart1Color}99`,
           paths: () => null,
           points: {
             show: true,
             size: 8,
-            fill: '#3b82f6',
-            stroke: '#2563eb',
+            fill: chart1Color,
+            stroke: chart1Color,
           },
         },
       ],
@@ -113,13 +122,10 @@ export function ChargingSessionsChart({ data, title = "Charging Sessions" }: Cha
         setCursor: [
           (u: uPlot) => {
             const idx = u.cursor.idx
-            if (idx !== null && idx !== undefined && idx < sessions.length) {
-              const session = sessions[idx]
+            if (idx != null && idx >= 0 && idx < sessions.length) {
               const left = u.cursor.left ?? 0
               const top = u.cursor.top ?? 0
-              if (left > 0 && top > 0) {
-                setTooltip({ x: left, y: top, session })
-              }
+              setTooltip({ x: left, y: top, session: sessions[idx] })
             } else {
               setTooltip(null)
             }
@@ -129,9 +135,9 @@ export function ChargingSessionsChart({ data, title = "Charging Sessions" }: Cha
           (u: uPlot) => {
             const ctx = u.ctx
             const { left, width } = u.bbox
-            
+
             ctx.save()
-            ctx.strokeStyle = '#888'
+            ctx.strokeStyle = borderColor
             ctx.setLineDash([5, 5])
             const y0 = Math.round(u.valToPos(0, 'y', true))
             ctx.beginPath()

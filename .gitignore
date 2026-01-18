@@ -2,6 +2,7 @@
 # DATA FILES (Too large for Git)
 # ===========================
 /consolidated_data/
+/consolidated_grouped_data/
 /extracted_data/
 /grouped_data/
 /old_data/

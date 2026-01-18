@@ -9,6 +9,12 @@ interface BatteryTimeSeriesChartProps {
   title?: string
 }
 
+function getCssVar(name: string): string {
+  if (typeof window === 'undefined') return '#888'
+  const style = getComputedStyle(document.documentElement)
+  return style.getPropertyValue(name).trim() || '#888'
+}
+
 export function BatteryTimeSeriesChart({ data, title = "Battery Level Over Time" }: BatteryTimeSeriesChartProps) {
   const chartRef = useRef<HTMLDivElement>(null)
   const uplotRef = useRef<uPlot | null>(null)
@@ -32,6 +38,11 @@ export function BatteryTimeSeriesChart({ data, title = "Battery Level Over Time"
   useEffect(() => {
     if (!chartRef.current || timestamps.length === 0) return
 
+    const borderColor = getCssVar('--border')
+    const chart1Color = getCssVar('--chart-1')
+    const destructiveColor = getCssVar('--destructive')
+    const chart3Color = getCssVar('--chart-3')
+
     const opts: uPlot.Options = {
       width: chartRef.current.clientWidth,
       height: 400,
@@ -44,12 +55,12 @@ export function BatteryTimeSeriesChart({ data, title = "Battery Level Over Time"
       },
       axes: [
         {
-          stroke: '#888',
-          grid: { stroke: '#e5e5e5', width: 1 },
+          stroke: borderColor,
+          grid: { stroke: borderColor, width: 1 },
         },
         {
-          stroke: '#888',
-          grid: { stroke: '#e5e5e5', width: 1 },
+          stroke: borderColor,
+          grid: { stroke: borderColor, width: 1 },
           label: 'Battery %',
           labelSize: 14,
         },
@@ -58,9 +69,9 @@ export function BatteryTimeSeriesChart({ data, title = "Battery Level Over Time"
         {},
         {
           label: 'Battery',
-          stroke: '#3b82f6',
+          stroke: chart1Color,
           width: 2,
-          fill: 'rgba(59, 130, 246, 0.1)',
+          fill: `${chart1Color}15`,
           points: {
             show: false,
           },
@@ -71,28 +82,28 @@ export function BatteryTimeSeriesChart({ data, title = "Battery Level Over Time"
           (u: uPlot) => {
             const ctx = u.ctx
             const { left } = u.bbox
-            
+
             ctx.save()
-            ctx.strokeStyle = 'red'
+            ctx.strokeStyle = destructiveColor
             ctx.setLineDash([5, 5])
             const y20 = Math.round(u.valToPos(20, 'y', true))
             ctx.beginPath()
             ctx.moveTo(left, y20)
             ctx.lineTo(left + u.bbox.width, y20)
             ctx.stroke()
-            
-            ctx.strokeStyle = 'green'
+
+            ctx.strokeStyle = chart3Color
             const y80 = Math.round(u.valToPos(80, 'y', true))
             ctx.beginPath()
             ctx.moveTo(left, y80)
             ctx.lineTo(left + u.bbox.width, y80)
             ctx.stroke()
             ctx.restore()
-            
+
             if (chargingIndices.length > 0 && chargingIndices.length < 500) {
               ctx.save()
-              ctx.fillStyle = '#22c55e'
-              ctx.strokeStyle = '#16a34a'
+              ctx.fillStyle = chart3Color
+              ctx.strokeStyle = chart3Color
               chargingIndices.forEach(i => {
                 if (i < timestamps.length) {
                   const x = u.valToPos(timestamps[i], 'x', true)

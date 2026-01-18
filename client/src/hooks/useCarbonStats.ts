@@ -10,82 +10,91 @@ import type {
   CarbonInsight,
   CarbonConstants,
 } from '@/lib/api'
+import { useDataSource } from '@/contexts/DataSourceContext'
 
 export function useCarbonSummary() {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['carbonSummary'],
+    queryKey: ['carbonSummary', dataSource],
     queryFn: async () => {
-      const response = await carbonApi.getSummary()
+      const response = await carbonApi.getSummary(dataSource)
       return response.data
     },
   })
 }
 
 export function useCarbonByDevice(limit = 50) {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['carbonByDevice', limit],
+    queryKey: ['carbonByDevice', limit, dataSource],
     queryFn: async () => {
-      const response = await carbonApi.getByDevice(limit)
+      const response = await carbonApi.getByDevice(limit, dataSource)
       return response.data
     },
   })
 }
 
 export function useCarbonByGroup() {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['carbonByGroup'],
+    queryKey: ['carbonByGroup', dataSource],
     queryFn: async () => {
-      const response = await carbonApi.getByGroup()
+      const response = await carbonApi.getByGroup(dataSource)
       return response.data
     },
   })
 }
 
 export function useCarbonTrends() {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['carbonTrends'],
+    queryKey: ['carbonTrends', dataSource],
     queryFn: async () => {
-      const response = await carbonApi.getTrends()
+      const response = await carbonApi.getTrends(dataSource)
       return response.data
     },
   })
 }
 
 export function useCarbonComparisons() {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['carbonComparisons'],
+    queryKey: ['carbonComparisons', dataSource],
     queryFn: async () => {
-      const response = await carbonApi.getComparisons()
+      const response = await carbonApi.getComparisons(dataSource)
       return response.data
     },
   })
 }
 
 export function useCarbonByTimeOfDay() {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['carbonByTimeOfDay'],
+    queryKey: ['carbonByTimeOfDay', dataSource],
     queryFn: async () => {
-      const response = await carbonApi.getByTimeOfDay()
+      const response = await carbonApi.getByTimeOfDay(dataSource)
       return response.data
     },
   })
 }
 
 export function useCarbonInsights() {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['carbonInsights'],
+    queryKey: ['carbonInsights', dataSource],
     queryFn: async () => {
-      const response = await carbonApi.getInsights()
+      const response = await carbonApi.getInsights(dataSource)
       return response.data
     },
   })
 }
 
 export function useCarbonConstants() {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['carbonConstants'],
+    queryKey: ['carbonConstants', dataSource],
     queryFn: async () => {
-      const response = await carbonApi.getConstants()
+      const response = await carbonApi.getConstants(dataSource)
       return response.data
     },
     staleTime: Infinity,

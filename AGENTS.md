@@ -17,9 +17,13 @@ Smartphone Battery & Usage Analytics Platform analyzing Android telemetry data f
 ├── scripts/                # Data consolidation & loading scripts
 │   ├── setup-database.sh   # Database setup script (START HERE)
 │   ├── init-schema.ts      # Schema initialization
-│   ├── load-db.ts          # Data loading
-│   └── consolidate.ts      # CSV consolidation
-├── consolidated_data/      # Consolidated CSV files
+│   ├── load-db.ts          # Data loading (consolidated data)
+│   ├── load-grouped-db.ts  # Data loading (grouped data)
+│   ├── consolidate.ts      # CSV consolidation (original)
+│   └── consolidate-grouped.ts  # CSV consolidation (grouped data)
+├── consolidated_data/      # Consolidated CSV files (original)
+├── consolidated_grouped_data/  # Consolidated CSV files (grouped)
+├── grouped_data/           # Raw grouped data (36 groups)
 ├── pgdata/                 # PostgreSQL data directory (Docker volume)
 ├── prompt.md               # Detailed project requirements
 └── AGENTS.md               # This file
@@ -55,7 +59,13 @@ DB_PORT=5433 bun run init-schema.ts
 ### 3. Load Data (First time only)
 ```bash
 cd scripts
+
+# Load consolidated data (original)
 DB_PORT=5433 bun run load-db.ts
+
+# Load grouped data (36 groups)
+DB_PORT=5433 bun run consolidate-grouped.ts  # First consolidate
+DB_PORT=5433 bun run load-grouped-db.ts      # Then load
 ```
 
 ### 4. Start Backend
@@ -163,8 +173,10 @@ bun run lint         # Lint code
 ```bash
 cd scripts
 bun run consolidate.ts              # Consolidate CSV files
+bun run consolidate-grouped.ts      # Consolidate grouped CSV files
 DB_PORT=5433 bun run init-schema.ts # Initialize database schema
 DB_PORT=5433 bun run load-db.ts     # Load data into database
+DB_PORT=5433 bun run load-grouped-db.ts # Load grouped data into database
 ```
 
 ## Environment Variables
@@ -211,7 +223,8 @@ VITE_API_URL=http://localhost:3001/api
 - Use React Query for server state management
 
 ### API Design
-- RESTful endpoints under `/api/`
+- RESTful endpoints under `/api/` (consolidated) and `/api/grouped/` (grouped data)
+- Frontend toggle defaults to grouped data
 - Use query parameters for filters (`?device_id=X&start_date=Y`)
 - Return JSON with consistent structure: `{ data, error?, meta? }`
 - HTTP status codes: 200 (success), 400 (bad request), 500 (server error)

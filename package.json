@@ -1,0 +1,75 @@
+{
+  "name": "battery-analytics-platform",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Smartphone Battery & Usage Analytics Platform - Analyzing Android telemetry data from ~300 users",
+  "keywords": [
+    "battery-analytics",
+    "smartphone",
+    "android",
+    "telemetry",
+    "timescaledb",
+    "react",
+    "elysia",
+    "bun",
+    "data-visualization",
+    "carbon-footprint"
+  ],
+  "author": "Battery Analytics Team",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/battery-analytics-platform"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "bun": ">=1.0.0"
+  },
+  "scripts": {
+    "setup": "bun run db:start && bun run db:init && bun run db:load",
+    "setup:grouped": "bun run db:start && bun run db:init:grouped && bun run db:consolidate:grouped && bun run db:load:grouped",
+    
+    "dev": "concurrently \"bun run dev:server\" \"bun run dev:client\"",
+    "dev:server": "cd server && bun run dev",
+    "dev:client": "cd client && bun run dev",
+    
+    "build": "bun run build:server && bun run build:client",
+    "build:server": "cd server && bun run build",
+    "build:client": "cd client && bun run build",
+    
+    "start": "bun run start:server",
+    "start:server": "cd server && bun run start",
+    "preview": "cd client && bun run preview",
+    
+    "db:start": "./scripts/setup-database.sh start",
+    "db:stop": "./scripts/setup-database.sh stop",
+    "db:status": "./scripts/setup-database.sh status",
+    "db:reset": "./scripts/setup-database.sh reset",
+    "db:tunnel": "./scripts/setup-database.sh tunnel",
+    
+    "db:init": "cd scripts && DB_PORT=5433 bun run init-schema.ts",
+    "db:init:grouped": "cd scripts && DB_PORT=5433 DB_NAME=battery_analytics_grouped bun run init-schema.ts",
+    
+    "db:consolidate": "cd scripts && bun run consolidate.ts",
+    "db:consolidate:grouped": "cd scripts && bun run consolidate-grouped.ts",
+    
+    "db:load": "cd scripts && DB_PORT=5433 bun run load-db.ts",
+    "db:load:grouped": "cd scripts && DB_PORT=5433 bun run load-grouped-db.ts",
+    
+    "lint": "bun run lint:server && bun run lint:client",
+    "lint:server": "cd server && bun run lint",
+    "lint:client": "cd client && bun run lint",
+    
+    "typecheck": "bun run typecheck:server && bun run typecheck:client",
+    "typecheck:server": "cd server && bun run typecheck",
+    "typecheck:client": "cd client && tsc -b",
+    
+    "test": "cd server && bun test",
+    
+    "clean": "rm -rf server/dist client/dist",
+    "clean:data": "rm -rf consolidated_data consolidated_grouped_data"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}

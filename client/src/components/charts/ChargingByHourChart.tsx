@@ -7,6 +7,12 @@ interface ChargingByHourChartProps {
   title?: string
 }
 
+function getCssVar(name: string): string {
+  if (typeof window === 'undefined') return '#888'
+  const style = getComputedStyle(document.documentElement)
+  return style.getPropertyValue(name).trim() || '#888'
+}
+
 export function ChargingByHourChart({ data, title = "Charging Behavior by Hour" }: ChargingByHourChartProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -47,7 +53,11 @@ export function ChargingByHourChart({ data, title = "Charging Behavior by Hour" 
     const barWidth = chartWidth / 24 * 0.7
     const barGap = chartWidth / 24 * 0.3
 
-    ctx.strokeStyle = '#e5e7eb'
+    const borderColor = getCssVar('--border')
+    const mutedFgColor = getCssVar('--muted-foreground')
+    const fgColor = getCssVar('--foreground')
+
+    ctx.strokeStyle = borderColor
     ctx.lineWidth = 1
     for (let i = 0; i <= 4; i++) {
       const y = padding.top + (chartHeight * i / 4)
@@ -55,9 +65,9 @@ export function ChargingByHourChart({ data, title = "Charging Behavior by Hour" 
       ctx.moveTo(padding.left, y)
       ctx.lineTo(dimensions.width - padding.right, y)
       ctx.stroke()
-      
+
       const val = Math.round(maxSessions * (1 - i / 4))
-      ctx.fillStyle = '#6b7280'
+      ctx.fillStyle = mutedFgColor
       ctx.font = '11px system-ui'
       ctx.textAlign = 'right'
       ctx.fillText(val.toString(), padding.left - 8, y + 4)
@@ -70,20 +80,20 @@ export function ChargingByHourChart({ data, title = "Charging Behavior by Hour" 
 
       const hue = ((100 - item.avg_start_level) / 100) * 120
       ctx.fillStyle = `hsl(${hue}, 70%, 50%)`
-      
+
       ctx.beginPath()
       ctx.roundRect(x, y, barWidth, barHeight, [4, 4, 0, 0])
       ctx.fill()
 
       if (i % 3 === 0) {
-        ctx.fillStyle = '#6b7280'
+        ctx.fillStyle = mutedFgColor
         ctx.font = '11px system-ui'
         ctx.textAlign = 'center'
         ctx.fillText(`${item.hour}:00`, x + barWidth / 2, dimensions.height - padding.bottom + 20)
       }
     })
 
-    ctx.fillStyle = '#374151'
+    ctx.fillStyle = fgColor
     ctx.font = '11px system-ui'
     ctx.textAlign = 'center'
     ctx.fillText('Hour of Day', dimensions.width / 2, dimensions.height - 10)
@@ -97,15 +107,15 @@ export function ChargingByHourChart({ data, title = "Charging Behavior by Hour" 
     const legendY = padding.top - 15
     ctx.font = '10px system-ui'
     ctx.textAlign = 'left'
-    
+
     const gradient = ctx.createLinearGradient(dimensions.width - 180, 0, dimensions.width - 60, 0)
     gradient.addColorStop(0, 'hsl(120, 70%, 50%)')
     gradient.addColorStop(1, 'hsl(0, 70%, 50%)')
-    
+
     ctx.fillStyle = gradient
     ctx.fillRect(dimensions.width - 180, legendY - 8, 120, 10)
-    
-    ctx.fillStyle = '#6b7280'
+
+    ctx.fillStyle = mutedFgColor
     ctx.fillText('High', dimensions.width - 180, legendY + 12)
     ctx.textAlign = 'right'
     ctx.fillText('Low', dimensions.width - 60, legendY + 12)

@@ -17,19 +17,19 @@ function formatNumber(n: number, decimals = 2): string {
 
 function InsightCard({ insight }: { insight: CarbonInsight }) {
   const bgColors = {
-    tip: 'bg-blue-50 border-blue-200',
-    achievement: 'bg-green-50 border-green-200',
-    warning: 'bg-yellow-50 border-yellow-200',
-    info: 'bg-gray-50 border-gray-200',
+    tip: 'bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800',
+    achievement: 'bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800',
+    warning: 'bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-800',
+    info: 'bg-muted border-border',
   }
-  
+
   const icons = {
     tip: '💡',
     achievement: '🏆',
     warning: '⚠️',
     info: 'ℹ️',
   }
-  
+
   return (
     <div className={`rounded-lg border p-4 ${bgColors[insight.type]}`}>
       <div className="flex items-start gap-3">
@@ -41,7 +41,7 @@ function InsightCard({ insight }: { insight: CarbonInsight }) {
             <div className="text-lg font-bold mt-2">{insight.metric}</div>
           )}
           {insight.potential_savings_g && (
-            <div className="text-xs text-green-600 mt-1">
+            <div className="text-xs text-green-600 dark:text-green-400 mt-1">
               Potential savings: {formatNumber(insight.potential_savings_g)}g CO2
             </div>
           )}
@@ -53,25 +53,25 @@ function InsightCard({ insight }: { insight: CarbonInsight }) {
 
 function ComparisonCard({ label, value, unit, icon }: { label: string; value: number; unit: string; icon: string }) {
   return (
-    <div className="rounded-lg border bg-gradient-to-br from-green-50 to-emerald-50 p-4 text-center">
+    <div className="rounded-lg border bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 p-4 text-center">
       <div className="text-3xl mb-2">{icon}</div>
-      <div className="text-2xl font-bold text-green-700">{formatNumber(value, 1)}</div>
+      <div className="text-2xl font-bold text-green-700 dark:text-green-400">{formatNumber(value, 1)}</div>
       <div className="text-sm text-muted-foreground">{unit}</div>
-      <div className="text-xs mt-1 text-green-600">{label}</div>
+      <div className="text-xs mt-1 text-green-600 dark:text-green-500">{label}</div>
     </div>
   )
 }
 
 function TimeOfDayBar({ data }: { data: { time_period: string; co2_kg: number; sessions: number }[] }) {
   const maxCO2 = Math.max(...data.map(d => d.co2_kg), 0.001)
-  
+
   const periodColors: Record<string, string> = {
-    'Night (12am-6am)': '#1e3a5f',
+    'Night (12am-6am)': '#3b82f6',
     'Morning (6am-12pm)': '#f59e0b',
     'Afternoon (12pm-6pm)': '#ef4444',
     'Evening (6pm-12am)': '#8b5cf6',
   }
-  
+
   return (
     <div className="space-y-3">
       {data.map((d) => (
@@ -80,7 +80,7 @@ function TimeOfDayBar({ data }: { data: { time_period: string; co2_kg: number; s
             <span>{d.time_period}</span>
             <span className="font-medium">{formatNumber(d.co2_kg * 1000, 0)}g</span>
           </div>
-          <div className="h-6 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-6 bg-muted rounded-full overflow-hidden">
             <div
               className="h-full rounded-full transition-all"
               style={{
@@ -130,7 +130,7 @@ export function CarbonDashboard() {
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>Total CO2 Emissions</CardDescription>
-                <CardTitle className="text-3xl text-green-600">
+                <CardTitle className="text-3xl text-green-600 dark:text-green-400">
                   {formatNumber(summary.total_co2_kg)} kg
                 </CardTitle>
               </CardHeader>
@@ -144,7 +144,7 @@ export function CarbonDashboard() {
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>Projected Annual (All Devices)</CardDescription>
-                <CardTitle className="text-3xl text-amber-600">
+                <CardTitle className="text-3xl text-amber-600 dark:text-amber-400">
                   {formatNumber(summary.projected_annual_kg)} kg
                 </CardTitle>
               </CardHeader>
@@ -158,7 +158,7 @@ export function CarbonDashboard() {
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>Per Session Average</CardDescription>
-                <CardTitle className="text-3xl text-blue-600">
+                <CardTitle className="text-3xl text-blue-600 dark:text-blue-400">
                   {formatNumber(summary.avg_co2_per_session_g)} g
                 </CardTitle>
               </CardHeader>
@@ -172,7 +172,7 @@ export function CarbonDashboard() {
             <Card>
               <CardHeader className="pb-2">
                 <CardDescription>Devices Analyzed</CardDescription>
-                <CardTitle className="text-3xl text-purple-600">
+                <CardTitle className="text-3xl text-purple-600 dark:text-purple-400">
                   {summary.devices_count}
                 </CardTitle>
               </CardHeader>
@@ -259,9 +259,9 @@ export function CarbonDashboard() {
             {groupsLoading ? (
               <Skeleton className="h-48" />
             ) : groups ? (
-              <div className="space-y-2 max-h-[250px] overflow-y-auto">
+                <div className="space-y-2 max-h-[250px] overflow-y-auto">
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-white">
+                  <thead className="sticky top-0 bg-background">
                     <tr className="border-b text-left">
                       <th className="pb-2 font-medium">Group</th>
                       <th className="pb-2 font-medium text-right">CO2 (kg)</th>
@@ -275,7 +275,7 @@ export function CarbonDashboard() {
                         <td className="py-2 truncate max-w-[120px]" title={g.group_id}>
                           {g.group_id}
                         </td>
-                        <td className="py-2 text-right font-medium text-green-600">
+                        <td className="py-2 text-right font-medium text-green-600 dark:text-green-400">
                           {formatNumber(g.co2_kg)}
                         </td>
                         <td className="py-2 text-right">{g.devices}</td>
@@ -312,18 +312,18 @@ export function CarbonDashboard() {
         </CardContent>
       </Card>
 
-      <Card className="bg-gradient-to-br from-green-50 to-emerald-50 border-green-200">
+      <Card className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 border-green-200 dark:border-green-800">
         <CardContent className="pt-6">
           <div className="text-center">
             <div className="text-4xl mb-2">🌱</div>
-            <h3 className="text-lg font-semibold text-green-800">Did You Know?</h3>
-            <p className="text-sm text-green-700 mt-2 max-w-2xl mx-auto">
-              The average smartphone charging session uses about 14.8 Wh of energy, 
-              costing approximately {formatNumber(summary?.avg_co2_per_session_g ?? 4.5)}g of CO2. 
-              While this seems small, with billions of smartphones worldwide, 
+            <h3 className="text-lg font-semibold text-green-800 dark:text-green-200">Did You Know?</h3>
+            <p className="text-sm text-green-700 dark:text-green-300 mt-2 max-w-2xl mx-auto">
+              The average smartphone charging session uses about 14.8 Wh of energy,
+              costing approximately {formatNumber(summary?.avg_co2_per_session_g ?? 4.5)}g of CO2.
+              While this seems small, with billions of smartphones worldwide,
               optimizing charging habits can have a meaningful collective impact.
             </p>
-            <div className="mt-4 flex justify-center gap-4 text-xs text-green-600">
+            <div className="mt-4 flex justify-center gap-4 text-xs text-green-600 dark:text-green-500">
               <span>📊 Based on India's grid: 663 gCO2/kWh</span>
               <span>🔋 Battery: 4000mAh @ 3.7V</span>
               <span>⚡ Efficiency: 85%</span>

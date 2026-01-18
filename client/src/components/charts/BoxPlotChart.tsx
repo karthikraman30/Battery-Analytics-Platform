@@ -10,9 +10,18 @@ interface BoxPlotChartProps {
   maxItems?: number
 }
 
-const COLORS = [
-  '#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#22c55e',
-  '#14b8a6', '#06b6d4', '#6366f1', '#a855f7', '#f43f5e',
+function getCssVar(name: string): string {
+  if (typeof window === 'undefined') return '#888'
+  const style = getComputedStyle(document.documentElement)
+  return style.getPropertyValue(name).trim() || '#888'
+}
+
+const getColors = (): string[] => [
+  getCssVar('--chart-1'),
+  getCssVar('--chart-2'),
+  getCssVar('--chart-3'),
+  getCssVar('--chart-4'),
+  getCssVar('--chart-5'),
 ]
 
 export function BoxPlotChart({ 
@@ -66,7 +75,7 @@ export function BoxPlotChart({
     const range = maxVal - minVal || 1
     const scale = (val: number) => padding.left + ((val - minVal) / range) * chartWidth
 
-    ctx.strokeStyle = '#e5e7eb'
+    ctx.strokeStyle = getCssVar('--border')
     ctx.lineWidth = 1
     const gridLines = 5
     for (let i = 0; i <= gridLines; i++) {
@@ -77,12 +86,13 @@ export function BoxPlotChart({
       ctx.lineTo(x, dimensions.height - padding.bottom)
       ctx.stroke()
       
-      ctx.fillStyle = '#6b7280'
+      ctx.fillStyle = getCssVar('--muted-foreground')
       ctx.font = '11px system-ui'
       ctx.textAlign = 'center'
       ctx.fillText(`${Math.round(val)}%`, x, dimensions.height - padding.bottom + 20)
     }
 
+    const COLORS = getColors()
     chartData.forEach((item, i) => {
       const y = padding.top + i * (barHeight + barGap) + barHeight / 2
       const color = COLORS[i % COLORS.length]
@@ -123,7 +133,7 @@ export function BoxPlotChart({
       ctx.fill()
       ctx.stroke()
 
-      ctx.strokeStyle = '#1f2937'
+      ctx.strokeStyle = getCssVar('--foreground')
       ctx.lineWidth = 2
       ctx.beginPath()
       ctx.moveTo(x3, y - barHeight / 2)
@@ -138,13 +148,13 @@ export function BoxPlotChart({
       const label = item.device_id === 'all' 
         ? item.group_id.substring(0, 18) 
         : `${item.device_id}`.substring(0, 18)
-      ctx.fillStyle = '#374151'
+      ctx.fillStyle = getCssVar('--foreground')
       ctx.font = '12px system-ui'
       ctx.textAlign = 'right'
       ctx.fillText(label, padding.left - 10, y + 4)
     })
 
-    ctx.fillStyle = '#374151'
+    ctx.fillStyle = getCssVar('--foreground')
     ctx.font = 'bold 12px system-ui'
     ctx.textAlign = 'center'
     ctx.fillText(valueLabel, dimensions.width / 2, dimensions.height - 5)

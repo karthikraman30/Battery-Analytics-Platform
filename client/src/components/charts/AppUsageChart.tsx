@@ -22,6 +22,12 @@ const COLORS = [
   '#14b8a6', '#06b6d4', '#6366f1', '#a855f7', '#f43f5e',
 ]
 
+function getCssVar(name: string): string {
+  if (typeof window === 'undefined') return '#888'
+  const style = getComputedStyle(document.documentElement)
+  return style.getPropertyValue(name).trim() || '#888'
+}
+
 function formatAppName(name: string): string {
   if (name.includes('.')) {
     const parts = name.split('.')
@@ -38,6 +44,9 @@ function formatMinutes(minutes: number): string {
 }
 
 export function AppUsageChart({ data, title = "Top Apps by Usage", maxItems = 10 }: AppUsageChartProps) {
+  const borderColor = getCssVar('--border')
+  const foregroundColor = getCssVar('--foreground')
+  
   const chartData = data
     .slice(0, maxItems)
     .map(app => ({
@@ -72,16 +81,19 @@ export function AppUsageChart({ data, title = "Top Apps by Usage", maxItems = 10
       <CardContent>
         <ResponsiveContainer width="100%" height={Math.max(300, chartData.length * 35)}>
           <BarChart data={chartData} layout="vertical" margin={{ left: 10, right: 30 }}>
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke={borderColor} />
             <XAxis 
               type="number" 
               tickFormatter={(value) => formatMinutes(value)}
+              tick={{ fill: foregroundColor }}
+              stroke={borderColor}
             />
             <YAxis 
               type="category" 
               dataKey="displayName"
               width={120}
-              tick={{ fontSize: 12 }}
+              tick={{ fontSize: 12, fill: foregroundColor }}
+              stroke={borderColor}
             />
             <Tooltip
               formatter={(value) => [formatMinutes(value as number), 'Time']}

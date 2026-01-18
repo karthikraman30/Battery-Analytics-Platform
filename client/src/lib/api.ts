@@ -1,8 +1,6 @@
-/**
- * API client for Battery Analytics backend
- */
-
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
+
+export type DataSource = 'grouped' | 'consolidated'
 
 interface ApiResponse<T> {
   data: T;
@@ -10,28 +8,31 @@ interface ApiResponse<T> {
   error?: string;
 }
 
-async function fetchApi<T>(endpoint: string): Promise<ApiResponse<T>> {
-  const response = await fetch(`${API_BASE}${endpoint}`);
+function getPrefix(dataSource: DataSource): string {
+  return dataSource === 'grouped' ? '/grouped' : ''
+}
+
+async function fetchApi<T>(endpoint: string, dataSource: DataSource = 'consolidated'): Promise<ApiResponse<T>> {
+  const prefix = getPrefix(dataSource)
+  const response = await fetch(`${API_BASE}${prefix}${endpoint}`);
   if (!response.ok) {
     throw new Error(`API error: ${response.statusText}`);
   }
   return response.json();
 }
 
-// Device APIs
 export const devicesApi = {
-  list: () => fetchApi<DeviceInfo[]>('/devices'),
-  get: (deviceId: string) => fetchApi<DeviceDetail>(`/devices/${deviceId}`),
+  list: (dataSource: DataSource = 'consolidated') => fetchApi<DeviceInfo[]>('/devices', dataSource),
+  get: (deviceId: string, dataSource: DataSource = 'consolidated') => fetchApi<DeviceDetail>(`/devices/${deviceId}`, dataSource),
 };
 
-// Analytics APIs
 export interface DateRangeParams {
   startDate?: string
   endDate?: string
 }
 
 export const analyticsApi = {
-  getBatteryTimeSeries: (deviceId: string, groupId: string, granularity = 'raw', dateRange?: DateRangeParams) => {
+  getBatteryTimeSeries: (deviceId: string, groupId: string, granularity = 'raw', dateRange?: DateRangeParams, dataSource: DataSource = 'consolidated') => {
     const params = new URLSearchParams({
       device_id: deviceId,
       group_id: groupId,
@@ -39,40 +40,40 @@ export const analyticsApi = {
     })
     if (dateRange?.startDate) params.set('start_date', dateRange.startDate)
     if (dateRange?.endDate) params.set('end_date', dateRange.endDate)
-    return fetchApi<BatteryEvent[]>(`/analytics/battery-timeseries?${params.toString()}`)
+    return fetchApi<BatteryEvent[]>(`/analytics/battery-timeseries?${params.toString()}`, dataSource)
   },
   
-  getChargingSessions: (deviceId: string, groupId: string, dateRange?: DateRangeParams) => {
+  getChargingSessions: (deviceId: string, groupId: string, dateRange?: DateRangeParams, dataSource: DataSource = 'consolidated') => {
     const params = new URLSearchParams({
       device_id: deviceId,
       group_id: groupId
     })
     if (dateRange?.startDate) params.set('start_date', dateRange.startDate)
     if (dateRange?.endDate) params.set('end_date', dateRange.endDate)
-    return fetchApi<ChargingSession[]>(`/analytics/charging-sessions?${params.toString()}`)
+    return fetchApi<ChargingSession[]>(`/analytics/charging-sessions?${params.toString()}`, dataSource)
   },
   
-  getChargingStats: (deviceId: string, groupId: string, dateRange?: DateRangeParams) => {
+  getChargingStats: (deviceId: string, groupId: string, dateRange?: DateRangeParams, dataSource: DataSource = 'consolidated') => {
     const params = new URLSearchParams({
       device_id: deviceId,
       group_id: groupId
     })
     if (dateRange?.startDate) params.set('start_date', dateRange.startDate)
     if (dateRange?.endDate) params.set('end_date', dateRange.endDate)
-    return fetchApi<ChargingStats>(`/analytics/charging-stats?${params.toString()}`)
+    return fetchApi<ChargingStats>(`/analytics/charging-stats?${params.toString()}`, dataSource)
   },
   
-  getChargingPatterns: (deviceId?: string, groupId?: string, dateRange?: DateRangeParams) => {
+  getChargingPatterns: (deviceId?: string, groupId?: string, dateRange?: DateRangeParams, dataSource: DataSource = 'consolidated') => {
     const params = new URLSearchParams()
     if (deviceId) params.set('device_id', deviceId)
     if (groupId) params.set('group_id', groupId)
     if (dateRange?.startDate) params.set('start_date', dateRange.startDate)
     if (dateRange?.endDate) params.set('end_date', dateRange.endDate)
     const queryStr = params.toString()
-    return fetchApi<ChargingPattern[]>(`/analytics/charging-patterns${queryStr ? `?${queryStr}` : ''}`)
+    return fetchApi<ChargingPattern[]>(`/analytics/charging-patterns${queryStr ? `?${queryStr}` : ''}`, dataSource)
   },
   
-  getAppUsage: (deviceId: string, groupId: string, limit = 20, dateRange?: DateRangeParams) => {
+  getAppUsage: (deviceId: string, groupId: string, limit = 20, dateRange?: DateRangeParams, dataSource: DataSource = 'consolidated') => {
     const params = new URLSearchParams({
       device_id: deviceId,
       group_id: groupId,
@@ -80,47 +81,46 @@ export const analyticsApi = {
     })
     if (dateRange?.startDate) params.set('start_date', dateRange.startDate)
     if (dateRange?.endDate) params.set('end_date', dateRange.endDate)
-    return fetchApi<AppUsage[]>(`/analytics/app-usage?${params.toString()}`)
+    return fetchApi<AppUsage[]>(`/analytics/app-usage?${params.toString()}`, dataSource)
   },
   
-  getBatteryDistribution: (deviceId?: string, groupId?: string, dateRange?: DateRangeParams) => {
+  getBatteryDistribution: (deviceId?: string, groupId?: string, dateRange?: DateRangeParams, dataSource: DataSource = 'consolidated') => {
     const params = new URLSearchParams()
     if (deviceId) params.set('device_id', deviceId)
     if (groupId) params.set('group_id', groupId)
     if (dateRange?.startDate) params.set('start_date', dateRange.startDate)
     if (dateRange?.endDate) params.set('end_date', dateRange.endDate)
     const queryStr = params.toString()
-    return fetchApi<BatteryDistribution[]>(`/analytics/battery-distribution${queryStr ? `?${queryStr}` : ''}`)
+    return fetchApi<BatteryDistribution[]>(`/analytics/battery-distribution${queryStr ? `?${queryStr}` : ''}`, dataSource)
   },
 };
 
-// Aggregate APIs
 export const aggregatesApi = {
-  getStats: () => fetchApi<OverallStats>('/aggregates/stats'),
-  getChargingPatterns: () => fetchApi<ChargingPattern[]>('/aggregates/charging-patterns'),
-  getTopApps: (limit = 20) => fetchApi<AppUsage[]>(`/aggregates/top-apps?limit=${limit}`),
-  getBatteryDistribution: () => fetchApi<BatteryDistribution[]>('/aggregates/battery-distribution'),
-  getBatteryBoxPlot: (groupBy: 'device' | 'group' = 'device') => 
-    fetchApi<BoxPlotStats[]>(`/aggregates/battery-boxplot?group_by=${groupBy}`),
-  getChargingDurationBoxPlot: (groupBy: 'device' | 'group' = 'device') =>
-    fetchApi<ChargingDurationStats[]>(`/aggregates/charging-duration-boxplot?group_by=${groupBy}`),
-  getGroups: () => fetchApi<GroupStats[]>('/aggregates/groups'),
-  getHourlyPatterns: (deviceId?: string, groupId?: string) => {
+  getStats: (dataSource: DataSource = 'consolidated') => fetchApi<OverallStats>('/aggregates/stats', dataSource),
+  getChargingPatterns: (dataSource: DataSource = 'consolidated') => fetchApi<ChargingPattern[]>('/aggregates/charging-patterns', dataSource),
+  getTopApps: (limit = 20, dataSource: DataSource = 'consolidated') => fetchApi<AppUsage[]>(`/aggregates/top-apps?limit=${limit}`, dataSource),
+  getBatteryDistribution: (dataSource: DataSource = 'consolidated') => fetchApi<BatteryDistribution[]>('/aggregates/battery-distribution', dataSource),
+  getBatteryBoxPlot: (groupBy: 'device' | 'group' = 'device', dataSource: DataSource = 'consolidated') => 
+    fetchApi<BoxPlotStats[]>(`/aggregates/battery-boxplot?group_by=${groupBy}`, dataSource),
+  getChargingDurationBoxPlot: (groupBy: 'device' | 'group' = 'device', dataSource: DataSource = 'consolidated') =>
+    fetchApi<ChargingDurationStats[]>(`/aggregates/charging-duration-boxplot?group_by=${groupBy}`, dataSource),
+  getGroups: (dataSource: DataSource = 'consolidated') => fetchApi<GroupStats[]>('/aggregates/groups', dataSource),
+  getHourlyPatterns: (deviceId?: string, groupId?: string, dataSource: DataSource = 'consolidated') => {
     const params = new URLSearchParams()
     if (deviceId) params.set('device_id', deviceId)
     if (groupId) params.set('group_id', groupId)
     const queryStr = params.toString()
-    return fetchApi<HourlyUsagePattern[]>(`/aggregates/hourly-patterns${queryStr ? `?${queryStr}` : ''}`)
+    return fetchApi<HourlyUsagePattern[]>(`/aggregates/hourly-patterns${queryStr ? `?${queryStr}` : ''}`, dataSource)
   },
-  getChargingByHour: () => fetchApi<ChargingByHour[]>('/aggregates/charging-by-hour'),
-  getAppBatteryDrain: (sortBy: 'hours' | 'drain' | 'sessions' | 'devices' = 'hours', limit = 20, deviceId?: string, groupId?: string) => {
+  getChargingByHour: (dataSource: DataSource = 'consolidated') => fetchApi<ChargingByHour[]>('/aggregates/charging-by-hour', dataSource),
+  getAppBatteryDrain: (sortBy: 'hours' | 'drain' | 'sessions' | 'devices' = 'hours', limit = 20, deviceId?: string, groupId?: string, dataSource: DataSource = 'consolidated') => {
     const params = new URLSearchParams({ sort_by: sortBy, limit: String(limit) })
     if (deviceId) params.set('device_id', deviceId)
     if (groupId) params.set('group_id', groupId)
-    return fetchApi<AppBatteryDrain[]>(`/aggregates/app-battery-drain?${params.toString()}`)
+    return fetchApi<AppBatteryDrain[]>(`/aggregates/app-battery-drain?${params.toString()}`, dataSource)
   },
-  getAppUsageByHour: (topN = 5) => fetchApi<AppUsageByHour[]>(`/aggregates/app-usage-by-hour?top_n=${topN}`),
-  getUserBehaviors: () => fetchApi<UserBehavior[]>('/aggregates/user-behaviors'),
+  getAppUsageByHour: (topN = 5, dataSource: DataSource = 'consolidated') => fetchApi<AppUsageByHour[]>(`/aggregates/app-usage-by-hour?top_n=${topN}`, dataSource),
+  getUserBehaviors: (dataSource: DataSource = 'consolidated') => fetchApi<UserBehavior[]>('/aggregates/user-behaviors', dataSource),
 };
 
 // Types
@@ -353,12 +353,12 @@ export interface CarbonConstants {
 }
 
 export const carbonApi = {
-  getSummary: () => fetchApi<CarbonSummary>('/carbon/summary'),
-  getByDevice: (limit = 50) => fetchApi<CarbonByDevice[]>(`/carbon/by-device?limit=${limit}`),
-  getByGroup: () => fetchApi<CarbonByGroup[]>('/carbon/by-group'),
-  getTrends: () => fetchApi<CarbonTrend[]>('/carbon/trends'),
-  getComparisons: () => fetchApi<CarbonComparison>('/carbon/comparisons'),
-  getByTimeOfDay: () => fetchApi<CarbonByTimeOfDay[]>('/carbon/by-time-of-day'),
-  getInsights: () => fetchApi<CarbonInsight[]>('/carbon/insights'),
-  getConstants: () => fetchApi<CarbonConstants>('/carbon/constants'),
+  getSummary: (dataSource: DataSource = 'consolidated') => fetchApi<CarbonSummary>('/carbon/summary', dataSource),
+  getByDevice: (limit = 50, dataSource: DataSource = 'consolidated') => fetchApi<CarbonByDevice[]>(`/carbon/by-device?limit=${limit}`, dataSource),
+  getByGroup: (dataSource: DataSource = 'consolidated') => fetchApi<CarbonByGroup[]>('/carbon/by-group', dataSource),
+  getTrends: (dataSource: DataSource = 'consolidated') => fetchApi<CarbonTrend[]>('/carbon/trends', dataSource),
+  getComparisons: (dataSource: DataSource = 'consolidated') => fetchApi<CarbonComparison>('/carbon/comparisons', dataSource),
+  getByTimeOfDay: (dataSource: DataSource = 'consolidated') => fetchApi<CarbonByTimeOfDay[]>('/carbon/by-time-of-day', dataSource),
+  getInsights: (dataSource: DataSource = 'consolidated') => fetchApi<CarbonInsight[]>('/carbon/insights', dataSource),
+  getConstants: (dataSource: DataSource = 'consolidated') => fetchApi<CarbonConstants>('/carbon/constants', dataSource),
 };

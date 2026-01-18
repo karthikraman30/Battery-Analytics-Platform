@@ -13,72 +13,80 @@ import type {
   AppUsageByHour,
   UserBehavior,
 } from '@/lib/api'
+import { useDataSource } from '@/contexts/DataSourceContext'
 
 export function useOverallStats() {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['overallStats'],
+    queryKey: ['overallStats', dataSource],
     queryFn: async () => {
-      const response = await aggregatesApi.getStats()
+      const response = await aggregatesApi.getStats(dataSource)
       return response.data
     },
   })
 }
 
 export function useGlobalChargingPatterns() {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['globalChargingPatterns'],
+    queryKey: ['globalChargingPatterns', dataSource],
     queryFn: async () => {
-      const response = await aggregatesApi.getChargingPatterns()
+      const response = await aggregatesApi.getChargingPatterns(dataSource)
       return response.data
     },
   })
 }
 
 export function useTopApps(limit = 20) {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['topApps', limit],
+    queryKey: ['topApps', limit, dataSource],
     queryFn: async () => {
-      const response = await aggregatesApi.getTopApps(limit)
+      const response = await aggregatesApi.getTopApps(limit, dataSource)
       return response.data
     },
   })
 }
 
 export function useGlobalBatteryDistribution() {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['globalBatteryDistribution'],
+    queryKey: ['globalBatteryDistribution', dataSource],
     queryFn: async () => {
-      const response = await aggregatesApi.getBatteryDistribution()
+      const response = await aggregatesApi.getBatteryDistribution(dataSource)
       return response.data
     },
   })
 }
 
 export function useBatteryBoxPlot(groupBy: 'device' | 'group' = 'device') {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['batteryBoxPlot', groupBy],
+    queryKey: ['batteryBoxPlot', groupBy, dataSource],
     queryFn: async () => {
-      const response = await aggregatesApi.getBatteryBoxPlot(groupBy)
+      const response = await aggregatesApi.getBatteryBoxPlot(groupBy, dataSource)
       return response.data
     },
   })
 }
 
 export function useChargingDurationBoxPlot(groupBy: 'device' | 'group' = 'device') {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['chargingDurationBoxPlot', groupBy],
+    queryKey: ['chargingDurationBoxPlot', groupBy, dataSource],
     queryFn: async () => {
-      const response = await aggregatesApi.getChargingDurationBoxPlot(groupBy)
+      const response = await aggregatesApi.getChargingDurationBoxPlot(groupBy, dataSource)
       return response.data
     },
   })
 }
 
 export function useGroupStats() {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['groupStats'],
+    queryKey: ['groupStats', dataSource],
     queryFn: async () => {
-      const response = await aggregatesApi.getGroups()
+      const response = await aggregatesApi.getGroups(dataSource)
       return response.data
     },
   })
@@ -90,40 +98,44 @@ export function useAppBatteryDrain(
   deviceId?: string,
   groupId?: string
 ) {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['appBatteryDrain', sortBy, limit, deviceId, groupId],
+    queryKey: ['appBatteryDrain', sortBy, limit, deviceId, groupId, dataSource],
     queryFn: async () => {
-      const response = await aggregatesApi.getAppBatteryDrain(sortBy, limit, deviceId, groupId)
+      const response = await aggregatesApi.getAppBatteryDrain(sortBy, limit, deviceId, groupId, dataSource)
       return response.data
     },
   })
 }
 
 export function useChargingByHour() {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['chargingByHour'],
+    queryKey: ['chargingByHour', dataSource],
     queryFn: async () => {
-      const response = await aggregatesApi.getChargingByHour()
+      const response = await aggregatesApi.getChargingByHour(dataSource)
       return response.data
     },
   })
 }
 
 export function useAppUsageByHour(topN = 5) {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['appUsageByHour', topN],
+    queryKey: ['appUsageByHour', topN, dataSource],
     queryFn: async () => {
-      const response = await aggregatesApi.getAppUsageByHour(topN)
+      const response = await aggregatesApi.getAppUsageByHour(topN, dataSource)
       return response.data
     },
   })
 }
 
 export function useUserBehaviors() {
+  const { dataSource } = useDataSource()
   return useQuery({
-    queryKey: ['userBehaviors'],
+    queryKey: ['userBehaviors', dataSource],
     queryFn: async () => {
-      const response = await aggregatesApi.getUserBehaviors()
+      const response = await aggregatesApi.getUserBehaviors(dataSource)
       return response.data
     },
   })
