@@ -1,0 +1,23 @@
+{
+  "name": "battery-analytics-scripts",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "consolidate": "bun run consolidate.ts",
+    "load-db": "bun run load-db.ts",
+    "quality-check": "bun run quality-check.ts",
+    "init-schema": "bun run init-schema.ts"
+  },
+  "dependencies": {
+    "csv-parse": "^5.5.6",
+    "csv-stringify": "^6.5.0",
+    "pg": "^8.11.3",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/pg": "^8.10.9",
+    "@types/uuid": "^9.0.7",
+    "typescript": "^5.3.2"
+  }
+}
