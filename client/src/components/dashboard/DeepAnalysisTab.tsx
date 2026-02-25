@@ -291,7 +291,7 @@ export function DeepAnalysisTab() {
                                     <YAxis className="text-xs" tickFormatter={(v: number | string) => `${v}%`} />
                                     <Tooltip
                                         contentStyle={{ backgroundColor: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px' }}
-                                        formatter={(v: number | string) => [`${Number(v).toFixed(2)}%/hr`, 'Drain Rate']}
+                                        formatter={(v: unknown) => [`${Number(v ?? 0).toFixed(2)}%/hr`, 'Drain Rate']}
                                     />
                                     <ReferenceLine y={n(dr?.avg_drain_pct_per_hour ?? 0)} stroke="var(--primary)" strokeDasharray="4 4" />
                                     <Line type="monotone" dataKey="drain" name="Drain %/hr" stroke="var(--chart-1)" strokeWidth={2} dot={{ r: 3 }} />
