@@ -288,10 +288,10 @@ export function DeepAnalysisTab() {
                                 <LineChart data={drainHourData}>
                                     <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                                     <XAxis dataKey="label" className="text-xs" interval={1} angle={-40} textAnchor="end" height={52} />
-                                    <YAxis className="text-xs" tickFormatter={v => `${v}%`} />
+                                    <YAxis className="text-xs" tickFormatter={(v: number | string) => `${v}%`} />
                                     <Tooltip
                                         contentStyle={{ backgroundColor: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px' }}
-                                        formatter={(v: number) => [`${v.toFixed(2)}%/hr`, 'Drain Rate']}
+                                        formatter={(v: number | string) => [`${Number(v).toFixed(2)}%/hr`, 'Drain Rate']}
                                     />
                                     <ReferenceLine y={n(dr?.avg_drain_pct_per_hour ?? 0)} stroke="var(--primary)" strokeDasharray="4 4" />
                                     <Line type="monotone" dataKey="drain" name="Drain %/hr" stroke="var(--chart-1)" strokeWidth={2} dot={{ r: 3 }} />
