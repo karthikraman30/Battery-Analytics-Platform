@@ -5,7 +5,7 @@
     "rewrites": [
         {
             "source": "/api/:path*",
-            "destination": "/api/:path*"
+            "destination": "https://battery-analytics-api.onrender.com/api/:path*"
         }
     ]
 }
