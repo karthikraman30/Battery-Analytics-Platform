@@ -7,6 +7,7 @@ import { InsightsDashboard } from './InsightsDashboard'
 import { CarbonDashboard } from './CarbonDashboard'
 import { GroupAnalyticsDashboard } from './GroupAnalyticsDashboard'
 import { GroupCarbonDashboard } from './GroupCarbonDashboard'
+import { ChargingDataDashboard } from './ChargingDataDashboard'
 import { useDataSource } from '@/contexts/DataSourceContext'
 import { useTheme } from '@/contexts/ThemeContext'
 
@@ -30,6 +31,7 @@ export function DashboardLayout() {
   const { theme, toggleTheme } = useTheme()
 
   const isGrouped = dataSource === 'grouped'
+  const isCharging = dataSource === 'charging'
   const tabs = isGrouped ? GROUPED_TABS : CONSOLIDATED_TABS
   const activeTab = isGrouped ? groupedTab : consolidatedTab
   const setActiveTab = isGrouped ? setGroupedTab : setConsolidatedTab
@@ -46,23 +48,30 @@ export function DashboardLayout() {
             <div className="ml-4 flex items-center rounded-lg border bg-muted p-0.5">
               <button
                 onClick={() => setDataSource('grouped')}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
-                  dataSource === 'grouped'
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${dataSource === 'grouped'
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
-                }`}
+                  }`}
               >
                 Group Analysis
               </button>
               <button
                 onClick={() => setDataSource('consolidated')}
-                className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
-                  dataSource === 'consolidated'
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${dataSource === 'consolidated'
                     ? 'bg-background text-foreground shadow-sm'
                     : 'text-muted-foreground hover:text-foreground'
-                }`}
+                  }`}
               >
                 Individual Analysis
+              </button>
+              <button
+                onClick={() => setDataSource('charging')}
+                className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${dataSource === 'charging'
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                  }`}
+              >
+                Battery Data
               </button>
             </div>
             <button
@@ -73,19 +82,23 @@ export function DashboardLayout() {
               {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </button>
             <div className="ml-auto text-sm text-muted-foreground">
-              {isGrouped ? '35 Research Groups • Comparative Analysis' : 'Individual User Analysis'}
+              {isCharging ? '272 Users • Battery Charging Events' : isGrouped ? '35 Research Groups • Comparative Analysis' : 'Individual User Analysis'}
             </div>
           </div>
-          <Tabs
-            tabs={tabs}
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
-          />
+          {!isCharging && (
+            <Tabs
+              tabs={tabs}
+              activeTab={activeTab}
+              onTabChange={setActiveTab}
+            />
+          )}
         </div>
       </header>
 
       <main className="container mx-auto px-4 py-6">
-        {isGrouped ? (
+        {isCharging ? (
+          <ChargingDataDashboard />
+        ) : isGrouped ? (
           <>
             {groupedTab === 'groups' && <GroupAnalyticsDashboard />}
             {groupedTab === 'carbon' && <GroupCarbonDashboard />}
@@ -103,9 +116,10 @@ export function DashboardLayout() {
 
       <footer className="border-t py-4">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          Battery Analytics Platform • {isGrouped ? '35 Research Groups' : '~300 Users'} • 7-14 Days Data Collection
+          Battery Analytics Platform • {isCharging ? '272 Users • Charging Events' : isGrouped ? '35 Research Groups' : '~300 Users'} • {isCharging ? 'Oct-Nov 2025' : '7-14 Days Data Collection'}
         </div>
       </footer>
     </div>
   )
 }
+

@@ -17,6 +17,8 @@ import { groupedAnalyticsRoutes } from './routes/grouped-analytics';
 import { groupedAggregateRoutes } from './routes/grouped-aggregates';
 import { groupedCarbonRoutes } from './routes/grouped-carbon';
 import { testGroupedConnection, getGroupedPoolStats } from './db/grouped-connection';
+import { chargingRoutes } from './routes/charging-analytics';
+import { testChargingConnection, getChargingPoolStats } from './db/charging-connection';
 
 const PORT = parseInt(process.env.PORT || '3001');
 const NODE_ENV = process.env.NODE_ENV || 'development';
@@ -27,13 +29,15 @@ logger.info('Environment', { NODE_ENV, PORT });
 const app = new Elysia()
   // Logging middleware (must be first)
   .use(loggingMiddleware)
-  
+
   // CORS for frontend
   .use(cors({
-    origin: ['http://localhost:5173', 'http://localhost:3000'],
+    origin: process.env.CORS_ORIGIN
+      ? process.env.CORS_ORIGIN.split(',')
+      : ['http://localhost:5173', 'http://localhost:3000'],
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   }))
-  
+
   // Swagger documentation
   .use(swagger({
     documentation: {
@@ -49,16 +53,18 @@ const app = new Elysia()
       ]
     }
   }))
-  
+
   // Health check
   .get('/health', async () => {
     const dbConnected = await testConnection();
     const groupedDbConnected = await testGroupedConnection();
+    const chargingDbConnected = await testChargingConnection();
     const poolStats = getPoolStats();
     const groupedPoolStats = getGroupedPoolStats();
-    
-    return { 
-      status: dbConnected && groupedDbConnected ? 'healthy' : 'degraded',
+    const chargingPoolStats = getChargingPoolStats();
+
+    return {
+      status: dbConnected && chargingDbConnected ? 'healthy' : 'degraded',
       timestamp: new Date().toISOString(),
       databases: {
         consolidated: {
@@ -69,10 +75,14 @@ const app = new Elysia()
           connected: groupedDbConnected,
           pool: groupedPoolStats,
         },
+        charging: {
+          connected: chargingDbConnected,
+          pool: chargingPoolStats,
+        },
       },
     };
   })
-  
+
   // API info
   .get('/api', () => ({
     name: 'Battery Analytics API',
@@ -89,11 +99,12 @@ const app = new Elysia()
         aggregates: '/api/grouped/aggregates',
         carbon: '/api/grouped/carbon',
       },
+      charging: '/api/charging',
       swagger: '/swagger',
       health: '/health',
     }
   }))
-  
+
   // Mount routes
   .use(analyticsRoutes)
   .use(deviceRoutes)
@@ -103,7 +114,8 @@ const app = new Elysia()
   .use(groupedAnalyticsRoutes)
   .use(groupedAggregateRoutes)
   .use(groupedCarbonRoutes)
-  
+  .use(chargingRoutes)
+
   // Global error handling
   .onError(({ code, error, request }) => {
     const url = new URL(request.url);
@@ -112,14 +124,14 @@ const app = new Elysia()
       error: error.message,
       stack: NODE_ENV === 'development' ? error.stack : undefined,
     });
-    
+
     return {
       error: error.message || 'Internal server error',
       code,
       timestamp: new Date().toISOString(),
     };
   })
-  
+
   .listen(PORT);
 
 // Startup complete
@@ -144,6 +156,14 @@ testGroupedConnection().then(connected => {
     logger.info('Grouped database connection verified on startup');
   } else {
     logger.warn('Grouped database not available on startup - will retry on requests');
+  }
+});
+
+testChargingConnection().then(connected => {
+  if (connected) {
+    logger.info('Charging database connection verified on startup');
+  } else {
+    logger.warn('Charging database not available on startup - will retry on requests');
   }
 });
 

@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, type ReactNode } from 'react'
 
-type DataSource = 'grouped' | 'consolidated'
+type DataSource = 'grouped' | 'consolidated' | 'charging'
 
 interface DataSourceContextType {
   dataSource: DataSource

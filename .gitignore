@@ -56,3 +56,5 @@ pnpm-debug.log*
 # ===========================
 *.zip
 *.pdf
+
+.early.coverage

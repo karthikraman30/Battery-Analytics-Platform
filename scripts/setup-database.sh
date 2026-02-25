@@ -14,6 +14,7 @@ PGDATA_DIR="$PROJECT_DIR/pgdata"
 CONTAINER_NAME="timescaledb"
 DB_NAME="battery_analytics"
 DB_NAME_GROUPED="battery_analytics_grouped"
+DB_NAME_FRIEND="battery_analytics_friend"
 DB_USER="postgres"
 DB_PASSWORD="postgres"
 TUNNEL_PORT=5433
@@ -200,11 +201,20 @@ show_status() {
         echo -e "DB (grouped):      ${YELLOW}Not initialized${NC}"
     fi
     
+    # Database connection test (friend)
+    if docker exec $CONTAINER_NAME psql -U $DB_USER -d $DB_NAME_FRIEND -c "SELECT 1" &>/dev/null 2>&1; then
+        TABLES_F=$(docker exec $CONTAINER_NAME psql -U $DB_USER -d $DB_NAME_FRIEND -t -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE';" 2>/dev/null | tr -d ' ')
+        echo -e "DB (friend):       ${GREEN}Connected${NC} ($TABLES_F tables)"
+    else
+        echo -e "DB (friend):       ${YELLOW}Not initialized${NC}"
+    fi
+    
     echo ""
     echo "Connection strings:"
     echo "  Docker exec:       docker exec $CONTAINER_NAME psql -U $DB_USER -d $DB_NAME"
     echo "  Consolidated:      postgresql://$DB_USER:$DB_PASSWORD@localhost:$TUNNEL_PORT/$DB_NAME"
     echo "  Grouped:           postgresql://$DB_USER:$DB_PASSWORD@localhost:$TUNNEL_PORT/$DB_NAME_GROUPED"
+    echo "  Friend:            postgresql://$DB_USER:$DB_PASSWORD@localhost:$TUNNEL_PORT/$DB_NAME_FRIEND"
     echo ""
 }
 
