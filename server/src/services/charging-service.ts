@@ -318,6 +318,57 @@ export async function getChargeGainedDistribution() {
   return result.rows;
 }
 
+// ─── CDF Data (battery level at charge start + duration) ────────────────────
+
+export async function getCDFs() {
+  // CDF of battery level at start of charging sessions
+  const levelCdf = await queryCharging(`
+    WITH ordered AS (
+      SELECT start_percentage as level,
+        ROW_NUMBER() OVER (ORDER BY start_percentage) as rn,
+        COUNT(*) OVER () as total
+      FROM charging_sessions
+      WHERE is_complete = TRUE
+    )
+    SELECT level as x,
+      ROUND((rn::numeric / total), 4) as cdf
+    FROM ordered
+    ORDER BY level
+  `);
+
+  // CDF of charging session durations (capped at 150 mins for readability)
+  const durationCdf = await queryCharging(`
+    WITH ordered AS (
+      SELECT LEAST(duration_minutes, 150) as duration,
+        ROW_NUMBER() OVER (ORDER BY duration_minutes) as rn,
+        COUNT(*) OVER () as total
+      FROM charging_sessions
+      WHERE is_complete = TRUE AND duration_minutes >= 0
+    )
+    SELECT duration as x,
+      ROUND((rn::numeric / total), 4) as cdf
+    FROM ordered
+    ORDER BY duration
+  `);
+
+  // Downsample to ~200 points each for chart performance
+  const sample = (rows: { x: number; cdf: number }[], maxPoints = 200) => {
+    if (rows.length <= maxPoints) return rows;
+    const step = Math.ceil(rows.length / maxPoints);
+    const sampled = rows.filter((_, i) => i % step === 0);
+    // Always include the last point
+    if (sampled[sampled.length - 1] !== rows[rows.length - 1]) {
+      sampled.push(rows[rows.length - 1]);
+    }
+    return sampled;
+  };
+
+  return {
+    levelCdf: sample(levelCdf.rows as any),
+    durationCdf: sample(durationCdf.rows as any),
+  };
+}
+
 // ─── Daily Session Counts (Timeline) ────────────────────────────────────────
 
 export async function getDailySessionCounts() {
@@ -689,6 +740,308 @@ export async function getDeepAnalysis() {
     usageGapStat: usageGapStat.rows[0],
     drainRate: drainRate.rows[0],
     drainByHour: drainByHour.rows,
+  };
+}
+
+// ─── Battery Level Box Plot ─────────────────────────────────────────────────
+
+export async function getBatteryLevelBoxPlot() {
+  const connect = await queryCharging(`
+    SELECT
+      MIN(start_percentage) as min_val,
+      PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY start_percentage) as q1,
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY start_percentage) as median,
+      PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY start_percentage) as q3,
+      MAX(start_percentage) as max_val,
+      ROUND(AVG(start_percentage)::numeric, 1) as mean,
+      COUNT(*) as count
+    FROM charging_sessions
+  `);
+
+  const disconnect = await queryCharging(`
+    SELECT
+      MIN(end_percentage) as min_val,
+      PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY end_percentage) as q1,
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY end_percentage) as median,
+      PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY end_percentage) as q3,
+      MAX(end_percentage) as max_val,
+      ROUND(AVG(end_percentage)::numeric, 1) as mean,
+      COUNT(*) as count
+    FROM charging_sessions
+    WHERE is_complete = TRUE
+  `);
+
+  // Compute whisker bounds and outlier counts for connect
+  const cRow = connect.rows[0] as any;
+  const cIQR = Number(cRow.q3) - Number(cRow.q1);
+  const cLower = Math.max(0, Number(cRow.q1) - 1.5 * cIQR);
+  const cUpper = Math.min(100, Number(cRow.q3) + 1.5 * cIQR);
+
+  const connectOutliers = await queryCharging(`
+    SELECT
+      COUNT(*) FILTER (WHERE start_percentage < $1::numeric) as below,
+      COUNT(*) FILTER (WHERE start_percentage > $2::numeric) as above,
+      MIN(start_percentage) FILTER (WHERE start_percentage >= $1::numeric) as whisker_low,
+      MAX(start_percentage) FILTER (WHERE start_percentage <= $2::numeric) as whisker_high
+    FROM charging_sessions
+  `, [cLower, cUpper]);
+
+  // Compute whisker bounds and outlier counts for disconnect
+  const dRow = disconnect.rows[0] as any;
+  const dIQR = Number(dRow.q3) - Number(dRow.q1);
+  const dLower = Math.max(0, Number(dRow.q1) - 1.5 * dIQR);
+  const dUpper = Math.min(100, Number(dRow.q3) + 1.5 * dIQR);
+
+  const disconnectOutliers = await queryCharging(`
+    SELECT
+      COUNT(*) FILTER (WHERE end_percentage < $1::numeric) as below,
+      COUNT(*) FILTER (WHERE end_percentage > $2::numeric) as above,
+      MIN(end_percentage) FILTER (WHERE end_percentage >= $1::numeric) as whisker_low,
+      MAX(end_percentage) FILTER (WHERE end_percentage <= $2::numeric) as whisker_high
+    FROM charging_sessions
+    WHERE is_complete = TRUE
+  `, [dLower, dUpper]);
+
+  const cOut = connectOutliers.rows[0] as any;
+  const dOut = disconnectOutliers.rows[0] as any;
+
+  return {
+    connect: {
+      min: Number(cRow.min_val), q1: Number(cRow.q1), median: Number(cRow.median),
+      q3: Number(cRow.q3), max: Number(cRow.max_val), mean: Number(cRow.mean),
+      count: Number(cRow.count),
+      whiskerLow: Number(cOut.whisker_low ?? cRow.min_val),
+      whiskerHigh: Number(cOut.whisker_high ?? cRow.max_val),
+      outliersBelow: Number(cOut.below), outliersAbove: Number(cOut.above),
+    },
+    disconnect: {
+      min: Number(dRow.min_val), q1: Number(dRow.q1), median: Number(dRow.median),
+      q3: Number(dRow.q3), max: Number(dRow.max_val), mean: Number(dRow.mean),
+      count: Number(dRow.count),
+      whiskerLow: Number(dOut.whisker_low ?? dRow.min_val),
+      whiskerHigh: Number(dOut.whisker_high ?? dRow.max_val),
+      outliersBelow: Number(dOut.below), outliersAbove: Number(dOut.above),
+    },
+  };
+}
+
+// ─── Daily Charging Frequency ───────────────────────────────────────────────
+
+export async function getDailyChargingFrequency() {
+  // Distribution: how many user-days had 1, 2, 3, ... charges
+  const distribution = await queryCharging(`
+    WITH daily_counts AS (
+      SELECT user_id, DATE(connect_time) as day, COUNT(*) as charges_per_day
+      FROM charging_sessions
+      GROUP BY user_id, DATE(connect_time)
+    )
+    SELECT charges_per_day, COUNT(*) as frequency
+    FROM daily_counts
+    GROUP BY charges_per_day
+    ORDER BY charges_per_day
+  `);
+
+  // Overall stats
+  const stats = await queryCharging(`
+    WITH daily_counts AS (
+      SELECT user_id, DATE(connect_time) as day, COUNT(*) as charges_per_day
+      FROM charging_sessions
+      GROUP BY user_id, DATE(connect_time)
+    )
+    SELECT
+      ROUND(AVG(charges_per_day)::numeric, 2) as mean,
+      ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY charges_per_day)::numeric, 1) as median,
+      ROUND(STDDEV(charges_per_day)::numeric, 2) as stddev,
+      MIN(charges_per_day) as min_val,
+      MAX(charges_per_day) as max_val,
+      COUNT(*) as total_user_days
+    FROM daily_counts
+  `);
+
+  return {
+    distribution: distribution.rows,
+    stats: stats.rows[0],
+  };
+}
+
+// ─── Clean Data Analysis (mismatch ≤ 10 AND ≥ 8 observation days) ───────────
+
+export async function getCleanDataAnalysis() {
+  // Filter by specific user IDs from clean_users_summary.csv (155 users)
+  const cleanFilter = `user_id IN (
+    1,3,5,8,9,10,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,36,38,44,47,48,
+    49,50,51,53,54,56,57,58,59,60,61,64,65,66,67,69,70,73,76,77,78,79,80,81,82,83,85,86,87,88,89,90,91,92,95,97,98,100,101,104,105,106,108,109,115,119,120,130,131,132,133,134,135,136,143,148,149,150,151,152,153,154,156,157,158,159,160,161,162,163,164,165,172,173,174,178,179,183,184,190,191,192,193,194,195,196,197,198,199,200,201,202,204,205,206,207,208,209,210,211,212,213,214,215,216,217,218,219,220,223,224,229,232,233,240,241,246,249,250,261,262,267,270,271,277
+  )`;
+
+  // Summary stats
+  const summary = await queryCharging(`
+    SELECT
+      155 as total_users,
+      COUNT(*) as total_sessions,
+      COUNT(*) FILTER (WHERE is_complete = TRUE) as complete_sessions,
+      ROUND(AVG(duration_minutes) FILTER (WHERE is_complete = TRUE)::numeric, 1) as avg_duration,
+      ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_minutes) FILTER (WHERE is_complete = TRUE)::numeric, 1) as median_duration,
+      ROUND(STDDEV(duration_minutes) FILTER (WHERE is_complete = TRUE)::numeric, 1) as stddev_duration,
+      ROUND(AVG(charge_gained) FILTER (WHERE is_complete = TRUE AND charge_gained >= 0)::numeric, 1) as avg_charge_gained,
+      ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY charge_gained) FILTER (WHERE is_complete = TRUE AND charge_gained >= 0)::numeric, 1) as median_charge_gained,
+      ROUND(STDDEV(charge_gained) FILTER (WHERE is_complete = TRUE AND charge_gained >= 0)::numeric, 1) as stddev_charge_gained,
+      ROUND(AVG(start_percentage)::numeric, 1) as avg_connect_level,
+      ROUND(AVG(end_percentage) FILTER (WHERE is_complete = TRUE)::numeric, 1) as avg_disconnect_level
+    FROM charging_sessions
+    WHERE ${cleanFilter}
+  `);
+
+  // Box plots for 4 metrics
+  const boxPlotQuery = async (column: string, extraFilter = '') => {
+    const r = await queryCharging(`
+      SELECT
+        MIN(${column}) as min_val,
+        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY ${column}) as q1,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${column}) as median,
+        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY ${column}) as q3,
+        MAX(${column}) as max_val,
+        ROUND(AVG(${column})::numeric, 2) as mean,
+        COUNT(*) as count
+      FROM charging_sessions
+      WHERE ${cleanFilter} ${extraFilter}
+    `);
+    const row = r.rows[0] as any;
+    const iqr = Number(row.q3) - Number(row.q1);
+    const wLow = Number(row.q1) - 1.5 * iqr;
+    const wHigh = Number(row.q3) + 1.5 * iqr;
+
+    const outliers = await queryCharging(`
+      SELECT
+        COUNT(*) FILTER (WHERE ${column} < $1::numeric) as below,
+        COUNT(*) FILTER (WHERE ${column} > $2::numeric) as above,
+        MIN(${column}) FILTER (WHERE ${column} >= $1::numeric) as whisker_low,
+        MAX(${column}) FILTER (WHERE ${column} <= $2::numeric) as whisker_high
+      FROM charging_sessions
+      WHERE ${cleanFilter} ${extraFilter}
+    `, [wLow, wHigh]);
+    const o = outliers.rows[0] as any;
+
+    return {
+      min: Number(row.min_val), q1: Number(row.q1), median: Number(row.median),
+      q3: Number(row.q3), max: Number(row.max_val), mean: Number(row.mean),
+      count: Number(row.count),
+      whiskerLow: Number(o.whisker_low ?? row.min_val),
+      whiskerHigh: Number(o.whisker_high ?? row.max_val),
+      outliersBelow: Number(o.below), outliersAbove: Number(o.above),
+    };
+  };
+
+  const connectBox = await boxPlotQuery('start_percentage');
+  const disconnectBox = await boxPlotQuery('end_percentage', 'AND is_complete = TRUE');
+  const durationBox = await boxPlotQuery('duration_minutes', 'AND is_complete = TRUE AND duration_minutes >= 0');
+  const chargeGainedBox = await boxPlotQuery('charge_gained', 'AND is_complete = TRUE AND charge_gained >= 0');
+
+  // Histograms
+  const durationHist = await queryCharging(`
+    SELECT
+      CASE
+        WHEN duration_minutes < 5 THEN '0-5 min'
+        WHEN duration_minutes < 15 THEN '5-15 min'
+        WHEN duration_minutes < 30 THEN '15-30 min'
+        WHEN duration_minutes < 60 THEN '30-60 min'
+        WHEN duration_minutes < 120 THEN '1-2 hrs'
+        WHEN duration_minutes < 240 THEN '2-4 hrs'
+        WHEN duration_minutes < 480 THEN '4-8 hrs'
+        ELSE '8+ hrs'
+      END as bucket,
+      CASE
+        WHEN duration_minutes < 5 THEN 0
+        WHEN duration_minutes < 15 THEN 1
+        WHEN duration_minutes < 30 THEN 2
+        WHEN duration_minutes < 60 THEN 3
+        WHEN duration_minutes < 120 THEN 4
+        WHEN duration_minutes < 240 THEN 5
+        WHEN duration_minutes < 480 THEN 6
+        ELSE 7
+      END as bucket_order,
+      COUNT(*) as count
+    FROM charging_sessions
+    WHERE is_complete = TRUE AND duration_minutes >= 0 AND ${cleanFilter}
+    GROUP BY bucket, bucket_order
+    ORDER BY bucket_order
+  `);
+
+  const chargeHist = await queryCharging(`
+    SELECT
+      CASE
+        WHEN charge_gained < 0 THEN 'Negative'
+        WHEN charge_gained = 0 THEN '0%'
+        WHEN charge_gained <= 10 THEN '1-10%'
+        WHEN charge_gained <= 20 THEN '11-20%'
+        WHEN charge_gained <= 30 THEN '21-30%'
+        WHEN charge_gained <= 50 THEN '31-50%'
+        WHEN charge_gained <= 70 THEN '51-70%'
+        WHEN charge_gained <= 90 THEN '71-90%'
+        ELSE '91-100%'
+      END as bucket,
+      CASE
+        WHEN charge_gained < 0 THEN 0
+        WHEN charge_gained = 0 THEN 1
+        WHEN charge_gained <= 10 THEN 2
+        WHEN charge_gained <= 20 THEN 3
+        WHEN charge_gained <= 30 THEN 4
+        WHEN charge_gained <= 50 THEN 5
+        WHEN charge_gained <= 70 THEN 6
+        WHEN charge_gained <= 90 THEN 7
+        ELSE 8
+      END as bucket_order,
+      COUNT(*) as count
+    FROM charging_sessions
+    WHERE is_complete = TRUE AND ${cleanFilter}
+    GROUP BY bucket, bucket_order
+    ORDER BY bucket_order
+  `);
+
+  const connectHist = await queryCharging(`
+    SELECT
+      (FLOOR(start_percentage / 10) * 10)::int as level_bucket,
+      COUNT(*) as count
+    FROM charging_sessions
+    WHERE ${cleanFilter}
+    GROUP BY level_bucket
+    ORDER BY level_bucket
+  `);
+
+  // Scatter plot data: start_percentage vs charge_gained (sampled for performance)
+  const scatterStartVsCharge = await queryCharging(`
+    SELECT start_percentage, charge_gained, duration_minutes
+    FROM charging_sessions
+    WHERE is_complete = TRUE AND charge_gained >= 0 AND ${cleanFilter}
+    ORDER BY RANDOM()
+    LIMIT 2000
+  `);
+
+  // Scatter plot: duration vs charge_gained
+  const scatterDurationVsCharge = await queryCharging(`
+    SELECT duration_minutes, charge_gained, start_percentage
+    FROM charging_sessions
+    WHERE is_complete = TRUE AND duration_minutes >= 0 AND charge_gained >= 0 AND ${cleanFilter}
+    ORDER BY RANDOM()
+    LIMIT 2000
+  `);
+
+  return {
+    summary: summary.rows[0],
+    boxPlots: {
+      connectLevel: connectBox,
+      disconnectLevel: disconnectBox,
+      duration: durationBox,
+      chargeGained: chargeGainedBox,
+    },
+    histograms: {
+      duration: durationHist.rows,
+      chargeGained: chargeHist.rows,
+      connectLevel: connectHist.rows,
+    },
+    scatterPlots: {
+      startVsCharge: scatterStartVsCharge.rows,
+      durationVsCharge: scatterDurationVsCharge.rows,
+    },
   };
 }
 
