@@ -10,9 +10,10 @@ import { logger } from '../lib/logger';
 
 function buildConfig() {
   if (process.env.DATABASE_URL) {
+    const isLocal = process.env.DATABASE_URL.includes('localhost') || process.env.DATABASE_URL.includes('127.0.0.1');
     return {
       connectionString: process.env.DATABASE_URL,
-      ssl: { rejectUnauthorized: false },
+      ...(isLocal ? {} : { ssl: { rejectUnauthorized: false } }),
       max: 10,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000,

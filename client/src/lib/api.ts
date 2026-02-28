@@ -400,6 +400,10 @@ export const chargingApi = {
   getComparison: () => fetchChargingApi<ChargingComparison>('/comparison'),
   getUserDateRanges: () => fetchChargingApi<UserDateRanges>('/user-date-ranges'),
   getDeepAnalysis: () => fetchChargingApi<DeepAnalysis>('/deep-analysis'),
+  getCDFs: () => fetchChargingApi<ChargingCDFs>('/cdfs'),
+  getLevelBoxPlot: () => fetchChargingApi<BatteryLevelBoxPlot>('/level-boxplot'),
+  getDailyChargeFrequency: () => fetchChargingApi<DailyChargeFrequency>('/daily-charge-frequency'),
+  getCleanAnalysis: () => fetchChargingApi<CleanDataAnalysis>('/clean-analysis'),
 };
 
 // ─── Charging Data Types ────────────────────────────────────────────────────
@@ -527,4 +531,53 @@ export interface DeepAnalysis {
   usageGapStat: { avg_gap_hours: number; median_gap_hours: number };
   drainRate: { avg_drain_pct_per_hour: number; median_drain_pct_per_hour: number; avg_hours_per_pct: number; p25_drain: number; p75_drain: number; data_points: number };
   drainByHour: { hour: number; avg_drain_pct_per_hour: number; samples: number }[];
+}
+
+export interface ChargingCDFs {
+  levelCdf: { x: number; cdf: number }[];
+  durationCdf: { x: number; cdf: number }[];
+}
+
+export interface BoxPlotData {
+  min: number; q1: number; median: number; q3: number; max: number;
+  mean: number; count: number;
+  whiskerLow: number; whiskerHigh: number;
+  outliersBelow: number; outliersAbove: number;
+}
+
+export interface BatteryLevelBoxPlot {
+  connect: BoxPlotData;
+  disconnect: BoxPlotData;
+}
+
+export interface DailyChargeFrequency {
+  distribution: { charges_per_day: number; frequency: number }[];
+  stats: {
+    mean: number; median: number; stddev: number;
+    min_val: number; max_val: number; total_user_days: number;
+  };
+}
+
+export interface CleanDataAnalysis {
+  summary: {
+    total_users: number; total_sessions: number; complete_sessions: number;
+    avg_duration: number; median_duration: number; stddev_duration: number;
+    avg_charge_gained: number; median_charge_gained: number; stddev_charge_gained: number;
+    avg_connect_level: number; avg_disconnect_level: number;
+  };
+  boxPlots: {
+    connectLevel: BoxPlotData;
+    disconnectLevel: BoxPlotData;
+    duration: BoxPlotData;
+    chargeGained: BoxPlotData;
+  };
+  histograms: {
+    duration: { bucket: string; bucket_order: number; count: number }[];
+    chargeGained: { bucket: string; bucket_order: number; count: number }[];
+    connectLevel: { level_bucket: number; count: number }[];
+  };
+  scatterPlots: {
+    startVsCharge: { start_percentage: number; charge_gained: number; duration_minutes: number }[];
+    durationVsCharge: { duration_minutes: number; charge_gained: number; start_percentage: number }[];
+  };
 }

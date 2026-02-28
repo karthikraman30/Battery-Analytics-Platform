@@ -17,9 +17,13 @@ import {
     useChargingAnomalyImpact,
     useChargingChargeGainedDist,
     useChargingDailySessions,
+    useChargingCDFs,
+    useChargingLevelBoxPlot,
+    useChargingDailyFrequency,
 } from '@/hooks/useChargingData'
 import { ComparisonTab } from './ComparisonTab'
 import { DeepAnalysisTab } from './DeepAnalysisTab'
+import { CleanDataTab } from './CleanDataTab'
 
 const TABS = [
     { id: 'overview', label: 'Overview' },
@@ -29,6 +33,7 @@ const TABS = [
     { id: 'anomalies', label: 'Anomalies' },
     { id: 'comparison', label: 'Comparison' },
     { id: 'deep', label: 'Deep Analysis' },
+    { id: 'clean', label: 'Clean Data' },
 ]
 
 
@@ -53,6 +58,7 @@ export function ChargingDataDashboard() {
             {activeTab === 'anomalies' && <AnomaliesTab />}
             {activeTab === 'comparison' && <ComparisonTab />}
             {activeTab === 'deep' && <DeepAnalysisTab />}
+            {activeTab === 'clean' && <CleanDataTab />}
         </div>
     )
 }
@@ -65,7 +71,9 @@ function OverviewTab() {
     const { data: stats, isLoading: statsLoading } = useChargingStats()
     const { data: dailySessions } = useChargingDailySessions()
     const { data: durationDist } = useChargingDurationDist()
-    const { data: levelDist } = useChargingLevelDist()
+    const { data: cdfs } = useChargingCDFs()
+    const { data: levelBoxPlot } = useChargingLevelBoxPlot()
+    const { data: dailyFrequency } = useChargingDailyFrequency()
 
     if (statsLoading) {
         return (
@@ -180,29 +188,132 @@ function OverviewTab() {
                     </Card>
                 )}
 
-                {/* Battery level at connect vs disconnect */}
-                {levelDist && (
+                {/* Battery level box plots */}
+                {levelBoxPlot && (
                     <Card>
                         <CardHeader>
                             <CardTitle>Battery Level at Connect vs Disconnect</CardTitle>
-                            <CardDescription>Where users plug in and unplug</CardDescription>
+                            <CardDescription>Box plots showing Q1, median, Q3, whiskers, and outliers</CardDescription>
                         </CardHeader>
-                        <CardContent>
-                            <ResponsiveContainer width="100%" height={280}>
-                                <BarChart data={mergeLevelDist(levelDist)}>
-                                    <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
-                                    <XAxis dataKey="level" className="text-xs" tickFormatter={(v) => `${v}%`} />
-                                    <YAxis className="text-xs" />
-                                    <Tooltip contentStyle={{ backgroundColor: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px' }} />
-                                    <Legend />
-                                    <Bar dataKey="connect" name="Connect" fill="var(--chart-3)" radius={[4, 4, 0, 0]} />
-                                    <Bar dataKey="disconnect" name="Disconnect" fill="var(--chart-2)" radius={[4, 4, 0, 0]} />
-                                </BarChart>
-                            </ResponsiveContainer>
+                        <CardContent className="space-y-6">
+                            <BoxPlotViz data={levelBoxPlot.connect} label="Power Connected (Start %)" color="#22c55e" domainMax={100} />
+                            <div className="border-t" />
+                            <BoxPlotViz data={levelBoxPlot.disconnect} label="Power Disconnected (End %)" color="#f59e0b" domainMax={100} />
                         </CardContent>
                     </Card>
                 )}
             </div>
+
+            {/* Daily Charging Frequency */}
+            {dailyFrequency && dailyFrequency.distribution.length > 0 && (
+                <Card>
+                    <CardHeader>
+                        <CardTitle>Daily Charging Frequency</CardTitle>
+                        <CardDescription>
+                            How many times users charge per day •
+                            Median: <strong>{Number(dailyFrequency.stats.median)} charges/day</strong> •
+                            Mean: <strong>{Number(dailyFrequency.stats.mean).toFixed(1)}</strong> •
+                            Std Dev: <strong>{Number(dailyFrequency.stats.stddev).toFixed(2)}</strong> •
+                            {Number(dailyFrequency.stats.total_user_days).toLocaleString()} user-days total
+                        </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                        <ResponsiveContainer width="100%" height={300}>
+                            <BarChart data={dailyFrequency.distribution.map(d => ({
+                                charges: Number(d.charges_per_day),
+                                frequency: Number(d.frequency),
+                            }))}>
+                                <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                                <XAxis dataKey="charges" className="text-xs" label={{ value: 'Charges per Day', position: 'insideBottom', offset: -5, className: 'text-xs fill-muted-foreground' }} />
+                                <YAxis className="text-xs" label={{ value: 'User-Days', angle: -90, position: 'insideLeft', className: 'text-xs fill-muted-foreground' }} />
+                                <Tooltip
+                                    contentStyle={{ backgroundColor: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px' }}
+                                    formatter={(v: number | undefined) => [(v ?? 0).toLocaleString(), 'User-Days']}
+                                    labelFormatter={(v) => `${v} charges/day`}
+                                />
+                                <Bar dataKey="frequency" name="User-Days" fill="var(--chart-2)" radius={[4, 4, 0, 0]} />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </CardContent>
+                </Card>
+            )}
+
+            {/* CDF Charts */}
+            {cdfs && (
+                <div className="grid gap-6 lg:grid-cols-2">
+                    {/* CDF of Battery Level at Charge Start */}
+                    {cdfs.levelCdf && cdfs.levelCdf.length > 0 && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>CDF of Battery Level at Charge Start</CardTitle>
+                                <CardDescription>Cumulative distribution — what % of sessions start below a given battery level</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <ResponsiveContainer width="100%" height={300}>
+                                    <LineChart data={cdfs.levelCdf.map(d => ({ x: Number(d.x), cdf: Number(d.cdf) }))}>
+                                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                                        <XAxis
+                                            dataKey="x"
+                                            type="number"
+                                            domain={[0, 100]}
+                                            tickCount={11}
+                                            className="text-xs"
+                                            label={{ value: 'Battery Level', position: 'insideBottom', offset: -5, className: 'text-xs fill-muted-foreground' }}
+                                        />
+                                        <YAxis
+                                            className="text-xs"
+                                            domain={[0, 1]}
+                                            tickFormatter={(v) => v.toFixed(2)}
+                                            label={{ value: 'F(x)', angle: -90, position: 'insideLeft', className: 'text-xs fill-muted-foreground' }}
+                                        />
+                                        <Tooltip
+                                            contentStyle={{ backgroundColor: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px' }}
+                                            formatter={(v: number | undefined) => [(v ?? 0).toFixed(4), 'F(x)']}
+                                        />
+                                        <Line type="monotone" dataKey="cdf" stroke="var(--chart-1)" strokeWidth={2} dot={false} />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </CardContent>
+                        </Card>
+                    )}
+
+                    {/* CDF of Charging Duration */}
+                    {cdfs.durationCdf && cdfs.durationCdf.length > 0 && (
+                        <Card>
+                            <CardHeader>
+                                <CardTitle>CDF of Charging Duration</CardTitle>
+                                <CardDescription>Cumulative distribution — what % of sessions are shorter than a given duration</CardDescription>
+                            </CardHeader>
+                            <CardContent>
+                                <ResponsiveContainer width="100%" height={300}>
+                                    <LineChart data={cdfs.durationCdf.map(d => ({ x: Number(d.x), cdf: Number(d.cdf) }))}>
+                                        <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
+                                        <XAxis
+                                            dataKey="x"
+                                            type="number"
+                                            domain={[0, 150]}
+                                            tickCount={7}
+                                            className="text-xs"
+                                            label={{ value: 'Charging Duration (mins)', position: 'insideBottom', offset: -5, className: 'text-xs fill-muted-foreground' }}
+                                        />
+                                        <YAxis
+                                            className="text-xs"
+                                            domain={[0, 1]}
+                                            tickFormatter={(v) => v.toFixed(2)}
+                                            label={{ value: 'F(x)', angle: -90, position: 'insideLeft', className: 'text-xs fill-muted-foreground' }}
+                                        />
+                                        <Tooltip
+                                            contentStyle={{ backgroundColor: 'var(--card)', border: '1px solid var(--border)', borderRadius: '8px' }}
+                                            formatter={(v: number | undefined) => [(v ?? 0).toFixed(4), 'F(x)']}
+                                        />
+                                        <Line type="monotone" dataKey="cdf" stroke="var(--chart-2)" strokeWidth={2} dot={false} />
+                                    </LineChart>
+                                </ResponsiveContainer>
+                            </CardContent>
+                        </Card>
+                    )}
+                </div>
+            )}
         </div>
     )
 }
@@ -667,6 +778,50 @@ function mergeLevelDist(levelDist: { connect: { level_bucket: number; count: num
         connect: connectMap.get(b) || 0,
         disconnect: disconnectMap.get(b) || 0,
     }))
+}
+
+function BoxPlotViz({
+    data, label, color = 'var(--chart-1)', domainMax,
+}: {
+    data: { min: number; q1: number; median: number; q3: number; max: number; mean: number; count: number; whiskerLow: number; whiskerHigh: number; outliersBelow: number; outliersAbove: number };
+    label: string; color?: string; domainMax?: number;
+}) {
+    const { whiskerLow, q1, median, q3, whiskerHigh, mean, outliersBelow, outliersAbove, count } = data
+    const domMax = domainMax ?? Math.ceil(whiskerHigh * 1.1)
+    const scale = (v: number) => ((v) / domMax) * 100
+
+    return (
+        <div className="space-y-2">
+            <div className="text-sm font-medium">{label}</div>
+            <svg viewBox="0 0 400 80" className="w-full" style={{ maxHeight: 80 }}>
+                {/* Whisker line */}
+                <line x1={scale(whiskerLow) * 3.6 + 20} y1={40} x2={scale(whiskerHigh) * 3.6 + 20} y2={40} stroke={color} strokeWidth={1.5} />
+                {/* Whisker caps */}
+                <line x1={scale(whiskerLow) * 3.6 + 20} y1={30} x2={scale(whiskerLow) * 3.6 + 20} y2={50} stroke={color} strokeWidth={1.5} />
+                <line x1={scale(whiskerHigh) * 3.6 + 20} y1={30} x2={scale(whiskerHigh) * 3.6 + 20} y2={50} stroke={color} strokeWidth={1.5} />
+                {/* Box (Q1 to Q3) */}
+                <rect x={scale(q1) * 3.6 + 20} y={22} width={(scale(q3) - scale(q1)) * 3.6} height={36} fill={color} fillOpacity={0.2} stroke={color} strokeWidth={1.5} rx={3} />
+                {/* Median line */}
+                <line x1={scale(median) * 3.6 + 20} y1={20} x2={scale(median) * 3.6 + 20} y2={60} stroke={color} strokeWidth={2.5} />
+                {/* Mean diamond */}
+                <polygon points={`${scale(mean) * 3.6 + 20},32 ${scale(mean) * 3.6 + 24},40 ${scale(mean) * 3.6 + 20},48 ${scale(mean) * 3.6 + 16},40`} fill="white" stroke={color} strokeWidth={1} />
+            </svg>
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                <span>Min: <strong>{whiskerLow.toFixed(1)}%</strong></span>
+                <span>Q1: <strong>{q1.toFixed(1)}%</strong></span>
+                <span>Median: <strong className="text-foreground">{median.toFixed(1)}%</strong></span>
+                <span>Q3: <strong>{q3.toFixed(1)}%</strong></span>
+                <span>Max: <strong>{whiskerHigh.toFixed(1)}%</strong></span>
+                <span>Mean: <strong>{mean.toFixed(1)}%</strong></span>
+                <span>n={count.toLocaleString()}</span>
+            </div>
+            {(outliersBelow > 0 || outliersAbove > 0) && (
+                <div className="text-xs text-amber-500">
+                    Outliers: {outliersBelow > 0 && `${outliersBelow} below`}{outliersBelow > 0 && outliersAbove > 0 && ' • '}{outliersAbove > 0 && `${outliersAbove} above`}
+                </div>
+            )}
+        </div>
+    )
 }
 
 function HeatmapGrid({ data }: { data: { day_of_week: number; hour: number; session_count: number }[] }) {

@@ -93,6 +93,12 @@ export const chargingRoutes = new Elysia({ prefix: '/api/charging' })
         return { data };
     })
 
+    // CDF data (battery level at charge start + duration)
+    .get('/cdfs', async () => {
+        const data = await chargingService.getCDFs();
+        return { data };
+    })
+
     // Daily session counts timeline
     .get('/daily-sessions', async () => {
         const data = await chargingService.getDailySessionCounts();
@@ -115,5 +121,22 @@ export const chargingRoutes = new Elysia({ prefix: '/api/charging' })
     .get('/deep-analysis', async () => {
         const data = await chargingService.getDeepAnalysis();
         return { data };
-    });
+    })
 
+    // Battery level box plot (connect vs disconnect percentiles)
+    .get('/level-boxplot', async () => {
+        const data = await chargingService.getBatteryLevelBoxPlot();
+        return { data };
+    })
+
+    // Daily charging frequency (how many charges per day)
+    .get('/daily-charge-frequency', async () => {
+        const data = await chargingService.getDailyChargingFrequency();
+        return { data };
+    })
+
+    // Clean data analysis (mismatch ≤ 10, ≥ 8 observation days)
+    .get('/clean-analysis', async () => {
+        const data = await chargingService.getCleanDataAnalysis();
+        return { data };
+    });

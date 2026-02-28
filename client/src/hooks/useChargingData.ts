@@ -12,6 +12,10 @@ import type {
     ChargingComparison,
     UserDateRanges,
     DeepAnalysis,
+    ChargingCDFs,
+    BatteryLevelBoxPlot,
+    DailyChargeFrequency,
+    CleanDataAnalysis,
 } from '@/lib/api'
 
 export function useChargingStats() {
@@ -146,6 +150,46 @@ export function useDeepAnalysis() {
     })
 }
 
+export function useChargingCDFs() {
+    return useQuery({
+        queryKey: ['chargingCDFs'],
+        queryFn: async () => {
+            const response = await chargingApi.getCDFs()
+            return response.data
+        },
+    })
+}
+
+export function useChargingLevelBoxPlot() {
+    return useQuery({
+        queryKey: ['chargingLevelBoxPlot'],
+        queryFn: async () => {
+            const response = await chargingApi.getLevelBoxPlot()
+            return response.data
+        },
+    })
+}
+
+export function useChargingDailyFrequency() {
+    return useQuery({
+        queryKey: ['chargingDailyFrequency'],
+        queryFn: async () => {
+            const response = await chargingApi.getDailyChargeFrequency()
+            return response.data
+        },
+    })
+}
+
+export function useCleanDataAnalysis() {
+    return useQuery({
+        queryKey: ['cleanDataAnalysis'],
+        queryFn: async () => {
+            const response = await chargingApi.getCleanAnalysis()
+            return response.data
+        },
+    })
+}
+
 export type {
     ChargingDbStats,
     ChargingDbUser,
@@ -158,4 +202,8 @@ export type {
     ChargingComparison,
     UserDateRanges,
     DeepAnalysis,
+    ChargingCDFs,
+    BatteryLevelBoxPlot,
+    DailyChargeFrequency,
+    CleanDataAnalysis,
 }
