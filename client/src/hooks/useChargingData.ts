@@ -16,6 +16,8 @@ import type {
     BatteryLevelBoxPlot,
     DailyChargeFrequency,
     CleanDataAnalysis,
+    FullDatasetAnalysis,
+    FilteredDatasetAnalysis,
 } from '@/lib/api'
 
 export function useChargingStats() {
@@ -190,6 +192,26 @@ export function useCleanDataAnalysis() {
     })
 }
 
+export function useFullDatasetAnalysis() {
+    return useQuery({
+        queryKey: ['fullDatasetAnalysis'],
+        queryFn: async () => {
+            const response = await chargingApi.getFullDataset()
+            return response.data
+        },
+    })
+}
+
+export function useFilteredDatasetAnalysis() {
+    return useQuery({
+        queryKey: ['filteredDatasetAnalysis'],
+        queryFn: async () => {
+            const response = await chargingApi.getFilteredDataset()
+            return response.data
+        },
+    })
+}
+
 export type {
     ChargingDbStats,
     ChargingDbUser,
@@ -206,4 +228,6 @@ export type {
     BatteryLevelBoxPlot,
     DailyChargeFrequency,
     CleanDataAnalysis,
+    FullDatasetAnalysis,
+    FilteredDatasetAnalysis,
 }

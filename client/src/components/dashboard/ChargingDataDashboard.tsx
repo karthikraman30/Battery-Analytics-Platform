@@ -24,6 +24,8 @@ import {
 import { ComparisonTab } from './ComparisonTab'
 import { DeepAnalysisTab } from './DeepAnalysisTab'
 import { CleanDataTab } from './CleanDataTab'
+import { FullDatasetTab } from './FullDatasetTab'
+import { FilteredDatasetTab } from './FilteredDatasetTab'
 
 const TABS = [
     { id: 'overview', label: 'Overview' },
@@ -34,6 +36,8 @@ const TABS = [
     { id: 'comparison', label: 'Comparison' },
     { id: 'deep', label: 'Deep Analysis' },
     { id: 'clean', label: 'Clean Data' },
+    { id: 'full-dataset', label: 'Full Dataset' },
+    { id: 'filtered-dataset', label: 'Filtered Dataset' },
 ]
 
 
@@ -59,6 +63,8 @@ export function ChargingDataDashboard() {
             {activeTab === 'comparison' && <ComparisonTab />}
             {activeTab === 'deep' && <DeepAnalysisTab />}
             {activeTab === 'clean' && <CleanDataTab />}
+            {activeTab === 'full-dataset' && <FullDatasetTab />}
+            {activeTab === 'filtered-dataset' && <FilteredDatasetTab />}
         </div>
     )
 }

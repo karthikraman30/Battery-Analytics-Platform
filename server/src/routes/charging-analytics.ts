@@ -139,4 +139,16 @@ export const chargingRoutes = new Elysia({ prefix: '/api/charging' })
     .get('/clean-analysis', async () => {
         const data = await chargingService.getCleanDataAnalysis();
         return { data };
+    })
+
+    // Full dataset analysis (all users, comprehensive visualizations)
+    .get('/full-dataset', async () => {
+        const data = await chargingService.getFullDatasetAnalysis();
+        return { data };
+    })
+
+    // Filtered dataset analysis (mismatch + observation period filtering)
+    .get('/filtered-dataset', async () => {
+        const data = await chargingService.getFilteredDatasetAnalysis();
+        return { data };
     });

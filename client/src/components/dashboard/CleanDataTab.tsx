@@ -1,5 +1,5 @@
 import {
-    Battery, Clock, Users, Zap, TrendingUp, BarChart3,
+    Battery, Clock, Users, Zap, TrendingUp, BarChart3, AlertCircle,
 } from 'lucide-react'
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -13,7 +13,293 @@ import type { BoxPlotData } from '@/lib/api'
 function n(v: unknown) { return Number(v ?? 0) }
 
 // ──────────────────────────────────────────────────────────────────
-//  Reusable SVG box-plot renderer
+//  Combined horizontal box plot for Connect vs Disconnect comparison
+// ──────────────────────────────────────────────────────────────────
+
+function CombinedBatteryLevelBoxPlot({
+    connectData,
+    disconnectData,
+}: {
+    connectData: BoxPlotData;
+    disconnectData: BoxPlotData;
+}) {
+    // Chart dimensions
+    const width = 800
+    const height = 280
+    const marginLeft = 120
+    const marginRight = 40
+    const marginTop = 50
+    const marginBottom = 60
+    const plotWidth = width - marginLeft - marginRight
+    const plotHeight = height - marginTop - marginBottom
+    const rowHeight = plotHeight / 2
+    const boxHeight = 40
+
+    // Scale function: 0-100% battery maps to SVG x coordinates
+    const scale = (value: number) => marginLeft + (value / 100) * plotWidth
+
+    // Render a single horizontal box plot row
+    const renderBoxPlot = (data: BoxPlotData, rowIndex: number, color: string) => {
+        const centerY = marginTop + rowIndex * rowHeight + rowHeight / 2
+        const boxTop = centerY - boxHeight / 2
+        const boxBottom = centerY + boxHeight / 2
+
+        return (
+            <g key={rowIndex}>
+                {/* Whisker line */}
+                <line
+                    x1={scale(data.whiskerLow)}
+                    y1={centerY}
+                    x2={scale(data.whiskerHigh)}
+                    y2={centerY}
+                    stroke={color}
+                    strokeWidth={2}
+                />
+                {/* Whisker caps */}
+                <line
+                    x1={scale(data.whiskerLow)}
+                    y1={boxTop}
+                    x2={scale(data.whiskerLow)}
+                    y2={boxBottom}
+                    stroke={color}
+                    strokeWidth={2}
+                />
+                <line
+                    x1={scale(data.whiskerHigh)}
+                    y1={boxTop}
+                    x2={scale(data.whiskerHigh)}
+                    y2={boxBottom}
+                    stroke={color}
+                    strokeWidth={2}
+                />
+                {/* Box (Q1 to Q3) */}
+                <rect
+                    x={scale(data.q1)}
+                    y={boxTop}
+                    width={scale(data.q3) - scale(data.q1)}
+                    height={boxHeight}
+                    fill={color}
+                    fillOpacity={0.3}
+                    stroke={color}
+                    strokeWidth={2}
+                    rx={4}
+                />
+                {/* Median line (solid, thicker) */}
+                <line
+                    x1={scale(data.median)}
+                    y1={boxTop}
+                    x2={scale(data.median)}
+                    y2={boxBottom}
+                    stroke={color}
+                    strokeWidth={3}
+                />
+                {/* Mean marker (dashed vertical line + diamond) */}
+                <line
+                    x1={scale(data.mean)}
+                    y1={boxTop}
+                    x2={scale(data.mean)}
+                    y2={boxBottom}
+                    stroke={color}
+                    strokeWidth={2}
+                    strokeDasharray="4,4"
+                    opacity={0.8}
+                />
+                <circle
+                    cx={scale(data.mean)}
+                    cy={centerY}
+                    r={5}
+                    fill="white"
+                    stroke={color}
+                    strokeWidth={2}
+                />
+            </g>
+        )
+    }
+
+    const connectColor = '#22c55e'
+    const disconnectColor = '#f59e0b'
+
+    // Tick marks for x-axis
+    const xTicks = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+
+    return (
+        <div className="space-y-4">
+            <svg viewBox={`0 0 ${width} ${height}`} className="w-full" style={{ maxHeight: height }}>
+                {/* Title */}
+                <text
+                    x={width / 2}
+                    y={25}
+                    textAnchor="middle"
+                    className="text-base font-semibold fill-foreground"
+                    style={{ fontSize: 16 }}
+                >
+                    Battery Level Distribution: Connect vs Disconnect
+                </text>
+
+                {/* Y-axis labels */}
+                <text
+                    x={marginLeft - 15}
+                    y={marginTop + rowHeight / 2}
+                    textAnchor="end"
+                    dominantBaseline="middle"
+                    className="text-sm font-medium fill-foreground"
+                    style={{ fontSize: 14 }}
+                >
+                    Connect
+                </text>
+                <text
+                    x={marginLeft - 15}
+                    y={marginTop + rowHeight * 1.5}
+                    textAnchor="end"
+                    dominantBaseline="middle"
+                    className="text-sm font-medium fill-foreground"
+                    style={{ fontSize: 14 }}
+                >
+                    Disconnect
+                </text>
+
+                {/* X-axis */}
+                <line
+                    x1={marginLeft}
+                    y1={height - marginBottom}
+                    x2={width - marginRight}
+                    y2={height - marginBottom}
+                    stroke="currentColor"
+                    strokeWidth={1}
+                    className="stroke-border"
+                />
+
+                {/* X-axis ticks and labels */}
+                {xTicks.map((tick) => (
+                    <g key={tick}>
+                        <line
+                            x1={scale(tick)}
+                            y1={height - marginBottom}
+                            x2={scale(tick)}
+                            y2={height - marginBottom + 6}
+                            stroke="currentColor"
+                            strokeWidth={1}
+                            className="stroke-border"
+                        />
+                        <text
+                            x={scale(tick)}
+                            y={height - marginBottom + 20}
+                            textAnchor="middle"
+                            className="text-xs fill-muted-foreground"
+                            style={{ fontSize: 11 }}
+                        >
+                            {tick}
+                        </text>
+                    </g>
+                ))}
+
+                {/* X-axis label */}
+                <text
+                    x={width / 2}
+                    y={height - 10}
+                    textAnchor="middle"
+                    className="text-sm font-medium fill-foreground"
+                    style={{ fontSize: 13 }}
+                >
+                    Battery Percentage (%)
+                </text>
+
+                {/* Grid lines (vertical) */}
+                {xTicks.map((tick) => (
+                    <line
+                        key={tick}
+                        x1={scale(tick)}
+                        y1={marginTop}
+                        x2={scale(tick)}
+                        y2={height - marginBottom}
+                        stroke="currentColor"
+                        strokeWidth={1}
+                        className="stroke-border"
+                        opacity={0.1}
+                    />
+                ))}
+
+                {/* Box plots */}
+                {renderBoxPlot(connectData, 0, connectColor)}
+                {renderBoxPlot(disconnectData, 1, disconnectColor)}
+            </svg>
+
+            {/* Legend and Statistics Tables */}
+            <div className="grid gap-6 lg:grid-cols-2">
+                {/* Connect Statistics */}
+                <div className="space-y-2 rounded-lg border p-4">
+                    <div className="flex items-center gap-2 font-semibold text-sm">
+                        <Battery className="h-4 w-4" style={{ color: connectColor }} />
+                        Connect Level Statistics
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div><span className="text-muted-foreground">Min:</span> <strong>{connectData.whiskerLow.toFixed(1)}%</strong></div>
+                        <div><span className="text-muted-foreground">Q1:</span> <strong>{connectData.q1.toFixed(1)}%</strong></div>
+                        <div><span className="text-muted-foreground">Median:</span> <strong className="text-foreground">{connectData.median.toFixed(1)}%</strong></div>
+                        <div><span className="text-muted-foreground">Q3:</span> <strong>{connectData.q3.toFixed(1)}%</strong></div>
+                        <div><span className="text-muted-foreground">Max:</span> <strong>{connectData.whiskerHigh.toFixed(1)}%</strong></div>
+                        <div><span className="text-muted-foreground">Mean:</span> <strong>{connectData.mean.toFixed(1)}%</strong></div>
+                        <div className="col-span-2"><span className="text-muted-foreground">Sample size:</span> <strong>{connectData.count.toLocaleString()}</strong></div>
+                        {(connectData.outliersBelow > 0 || connectData.outliersAbove > 0) && (
+                            <div className="col-span-2 text-amber-500">
+                                Outliers: {connectData.outliersBelow > 0 && `${connectData.outliersBelow} below`}
+                                {connectData.outliersBelow > 0 && connectData.outliersAbove > 0 && ' • '}
+                                {connectData.outliersAbove > 0 && `${connectData.outliersAbove} above`}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Disconnect Statistics */}
+                <div className="space-y-2 rounded-lg border p-4">
+                    <div className="flex items-center gap-2 font-semibold text-sm">
+                        <Battery className="h-4 w-4" style={{ color: disconnectColor }} />
+                        Disconnect Level Statistics
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div><span className="text-muted-foreground">Min:</span> <strong>{disconnectData.whiskerLow.toFixed(1)}%</strong></div>
+                        <div><span className="text-muted-foreground">Q1:</span> <strong>{disconnectData.q1.toFixed(1)}%</strong></div>
+                        <div><span className="text-muted-foreground">Median:</span> <strong className="text-foreground">{disconnectData.median.toFixed(1)}%</strong></div>
+                        <div><span className="text-muted-foreground">Q3:</span> <strong>{disconnectData.q3.toFixed(1)}%</strong></div>
+                        <div><span className="text-muted-foreground">Max:</span> <strong>{disconnectData.whiskerHigh.toFixed(1)}%</strong></div>
+                        <div><span className="text-muted-foreground">Mean:</span> <strong>{disconnectData.mean.toFixed(1)}%</strong></div>
+                        <div className="col-span-2"><span className="text-muted-foreground">Sample size:</span> <strong>{disconnectData.count.toLocaleString()}</strong></div>
+                        {(disconnectData.outliersBelow > 0 || disconnectData.outliersAbove > 0) && (
+                            <div className="col-span-2 text-amber-500">
+                                Outliers: {disconnectData.outliersBelow > 0 && `${disconnectData.outliersBelow} below`}
+                                {disconnectData.outliersBelow > 0 && disconnectData.outliersAbove > 0 && ' • '}
+                                {disconnectData.outliersAbove > 0 && `${disconnectData.outliersAbove} above`}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+
+            {/* Legend */}
+            <div className="flex items-center justify-center gap-6 text-xs text-muted-foreground">
+                <div className="flex items-center gap-2">
+                    <div className="h-3 w-3 border-2 border-current" />
+                    <span>Box (Q1-Q3)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className="h-px w-6 bg-current" style={{ height: 3 }} />
+                    <span>Median (solid)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className="h-px w-6 border-t-2 border-dashed border-current" />
+                    <span>Mean (dashed)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className="h-px w-6 bg-current" />
+                    <span>Whiskers (min/max)</span>
+                </div>
+            </div>
+        </div>
+    )
+}
+
+// ──────────────────────────────────────────────────────────────────
+//  Reusable SVG box-plot renderer (for Duration & Charge Gained)
 // ──────────────────────────────────────────────────────────────────
 
 function BoxPlotChart({
@@ -85,7 +371,7 @@ function BoxPlotChart({
 // ──────────────────────────────────────────────────────────────────
 
 export function CleanDataTab() {
-    const { data, isLoading } = useCleanDataAnalysis()
+    const { data, isLoading, isError, error } = useCleanDataAnalysis()
 
     if (isLoading) {
         return (
@@ -100,7 +386,24 @@ export function CleanDataTab() {
         )
     }
 
-    if (!data) return null
+    if (isError || !data) {
+        const errMsg = error instanceof Error ? error.message : 'Failed to load clean data'
+        return (
+            <Card className="border-destructive/50 bg-destructive/5">
+                <CardContent className="flex flex-col items-center justify-center gap-4 py-12">
+                    <AlertCircle className="h-12 w-12 text-destructive" />
+                    <div className="text-center space-y-1">
+                        <h3 className="font-semibold text-destructive">Could not load Clean Data</h3>
+                        <p className="text-sm text-muted-foreground max-w-md">{errMsg}</p>
+                        <p className="text-xs text-muted-foreground mt-2">
+                            The charging API may be unavailable or the clean-analysis endpoint may not be deployed yet.
+                            Check that the backend at battery-analytics-api.onrender.com is running.
+                        </p>
+                    </div>
+                </CardContent>
+            </Card>
+        )
+    }
 
     const s = data.summary
 
@@ -157,32 +460,21 @@ export function CleanDataTab() {
                 </Card>
             </div>
 
-            {/* Box Plots (2×2) */}
+            {/* Combined Battery Level Box Plot */}
+            <Card>
+                <CardHeader>
+                    <CardDescription>Comparison of battery levels when users plug in vs unplug their phones</CardDescription>
+                </CardHeader>
+                <CardContent>
+                    <CombinedBatteryLevelBoxPlot
+                        connectData={data.boxPlots.connectLevel}
+                        disconnectData={data.boxPlots.disconnectLevel}
+                    />
+                </CardContent>
+            </Card>
+
+            {/* Remaining Box Plots (Duration & Charge Gained) */}
             <div className="grid gap-6 lg:grid-cols-2">
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <Battery className="h-4 w-4 text-green-500" />
-                            Battery Level at Connect
-                        </CardTitle>
-                        <CardDescription>Where users plug in their phone (start %)</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <BoxPlotChart data={data.boxPlots.connectLevel} label="Connect Level (%)" unit="%" color="#22c55e" domainMax={100} />
-                    </CardContent>
-                </Card>
-                <Card>
-                    <CardHeader>
-                        <CardTitle className="flex items-center gap-2">
-                            <Battery className="h-4 w-4 text-amber-500" />
-                            Battery Level at Disconnect
-                        </CardTitle>
-                        <CardDescription>Where users unplug their phone (end %)</CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                        <BoxPlotChart data={data.boxPlots.disconnectLevel} label="Disconnect Level (%)" unit="%" color="#f59e0b" domainMax={100} />
-                    </CardContent>
-                </Card>
                 <Card>
                     <CardHeader>
                         <CardTitle className="flex items-center gap-2">

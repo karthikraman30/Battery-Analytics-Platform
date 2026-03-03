@@ -10,6 +10,7 @@ import { GroupCarbonDashboard } from './GroupCarbonDashboard'
 import { ChargingDataDashboard } from './ChargingDataDashboard'
 import { useDataSource } from '@/contexts/DataSourceContext'
 import { useTheme } from '@/contexts/ThemeContext'
+import { useChargingStats } from '@/hooks/useChargingData'
 
 const CONSOLIDATED_TABS = [
   { id: 'overview', label: 'Overview' },
@@ -29,12 +30,15 @@ export function DashboardLayout() {
   const [groupedTab, setGroupedTab] = useState('groups')
   const { dataSource, setDataSource } = useDataSource()
   const { theme, toggleTheme } = useTheme()
+  const { data: chargingStats } = useChargingStats()
 
   const isGrouped = dataSource === 'grouped'
   const isCharging = dataSource === 'charging'
   const tabs = isGrouped ? GROUPED_TABS : CONSOLIDATED_TABS
   const activeTab = isGrouped ? groupedTab : consolidatedTab
   const setActiveTab = isGrouped ? setGroupedTab : setConsolidatedTab
+
+  const chargingUserCount = chargingStats?.total_users ? Number(chargingStats.total_users) : 273
 
   return (
     <div className="min-h-screen bg-background">
@@ -82,7 +86,7 @@ export function DashboardLayout() {
               {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </button>
             <div className="ml-auto text-sm text-muted-foreground">
-              {isCharging ? '272 Users • Battery Charging Events' : isGrouped ? '35 Research Groups • Comparative Analysis' : 'Individual User Analysis'}
+              {isCharging ? `${chargingUserCount} Users • Battery Charging Events` : isGrouped ? '35 Research Groups • Comparative Analysis' : 'Individual User Analysis'}
             </div>
           </div>
           {!isCharging && (
@@ -116,7 +120,7 @@ export function DashboardLayout() {
 
       <footer className="border-t py-4">
         <div className="container mx-auto px-4 text-center text-sm text-muted-foreground">
-          Battery Analytics Platform • {isCharging ? '272 Users • Charging Events' : isGrouped ? '35 Research Groups' : '~300 Users'} • {isCharging ? 'Oct-Nov 2025' : '7-14 Days Data Collection'}
+          Battery Analytics Platform • {isCharging ? `${chargingUserCount} Users • Charging Events` : isGrouped ? '35 Research Groups' : '~300 Users'} • {isCharging ? 'Oct-Nov 2025' : '7-14 Days Data Collection'}
         </div>
       </footer>
     </div>

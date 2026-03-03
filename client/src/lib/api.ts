@@ -404,6 +404,8 @@ export const chargingApi = {
   getLevelBoxPlot: () => fetchChargingApi<BatteryLevelBoxPlot>('/level-boxplot'),
   getDailyChargeFrequency: () => fetchChargingApi<DailyChargeFrequency>('/daily-charge-frequency'),
   getCleanAnalysis: () => fetchChargingApi<CleanDataAnalysis>('/clean-analysis'),
+  getFullDataset: () => fetchChargingApi<FullDatasetAnalysis>('/full-dataset'),
+  getFilteredDataset: () => fetchChargingApi<FilteredDatasetAnalysis>('/filtered-dataset'),
 };
 
 // ─── Charging Data Types ────────────────────────────────────────────────────
@@ -581,3 +583,93 @@ export interface CleanDataAnalysis {
     durationVsCharge: { duration_minutes: number; charge_gained: number; start_percentage: number }[];
   };
 }
+
+// ─── Full Dataset Analysis Types ────────────────────────────────────────────
+
+export interface FullDatasetAnalysis {
+  summary: {
+    total_users: number; total_events: number; total_sessions: number; complete_sessions: number;
+    avg_duration: number; median_duration: number; stddev_duration: number;
+    avg_charge_gained: number; median_charge_gained: number; stddev_charge_gained: number;
+    avg_connect_level: number; avg_disconnect_level: number;
+  };
+  boxPlots: {
+    connectLevel: BoxPlotData;
+    disconnectLevel: BoxPlotData;
+    duration: BoxPlotData;
+    chargeGained: BoxPlotData;
+  };
+  cdfs: {
+    levelCdf: { x: number; cdf: number }[];
+    durationCdf: { x: number; cdf: number }[];
+    chargeCdf: { x: number; cdf: number }[];
+  };
+  histograms: {
+    duration: { bucket: string; bucket_order: number; count: number }[];
+    chargeGained: { bucket: string; bucket_order: number; count: number }[];
+    chargeGainedMergeStats: { original_sessions: number; merged_sessions: number; sessions_merged_away: number; negative_excluded: number; above_100_excluded: number; sessions_in_chart: number };
+    connectLevel: { level_bucket: number; count: number }[];
+    disconnectLevel: { level_bucket: number; count: number }[];
+  };
+  dailyFrequency: {
+    distribution: { charges_per_day: number; frequency: number }[];
+    stats: { mean: number; median: number; stddev: number; min_val: number; max_val: number; total_user_days: number };
+  };
+  hourlyPattern: { hour: number; session_count: number; avg_start_level: number; avg_charge_gained: number }[];
+  heatmap: { day_of_week: number; hour: number; session_count: number }[];
+  scatterPlots: {
+    startVsCharge: { start_percentage: number; charge_gained: number; duration_minutes: number }[];
+    durationVsCharge: { duration_minutes: number; charge_gained: number; start_percentage: number }[];
+  };
+  batteryTide: { hour: number; avg_battery_level: number; user_count: number }[];
+  transitionMatrix: { start_bucket: number; end_bucket: number; count: number }[];
+}
+
+// ─── Filtered Dataset Analysis Types ────────────────────────────────────────
+
+export interface FilteredDatasetAnalysis {
+  mismatchDist: { bucket: string; bucket_order: number; user_count: number }[];
+  obsDist: { bucket: string; bucket_order: number; user_count: number; avg_days: number }[];
+  obsStats: { avg_days: number; median_days: number; min_days: number; max_days: number };
+  filterFunnel: { all_users: number; mismatch_pass: number; obs_pass: number; both_pass: number };
+  comparison: {
+    full_users: number; full_sessions: number; full_complete: number;
+    full_avg_duration: number; full_median_duration: number; full_avg_charge: number;
+    full_avg_connect: number; full_avg_disconnect: number;
+    filt_users: number; filt_sessions: number; filt_complete: number;
+    filt_avg_duration: number; filt_median_duration: number; filt_avg_charge: number;
+    filt_avg_connect: number; filt_avg_disconnect: number;
+  };
+  filteredAnalysis: {
+    boxPlots: {
+      connectLevel: BoxPlotData;
+      disconnectLevel: BoxPlotData;
+      duration: BoxPlotData;
+      chargeGained: BoxPlotData;
+    };
+    cdfs: {
+      levelCdf: { x: number; cdf: number }[];
+      durationCdf: { x: number; cdf: number }[];
+      chargeCdf: { x: number; cdf: number }[];
+    };
+    histograms: {
+      duration: { bucket: string; bucket_order: number; count: number }[];
+      chargeGained: { bucket: string; bucket_order: number; count: number }[];
+      chargeGainedMergeStats: { original_sessions: number; merged_sessions: number; sessions_merged_away: number; negative_excluded: number; above_100_excluded: number; sessions_in_chart: number };
+      connectLevel: { level_bucket: number; count: number }[];
+      disconnectLevel: { level_bucket: number; count: number }[];
+    };
+    hourlyPattern: { hour: number; session_count: number; avg_start_level: number; avg_charge_gained: number }[];
+    dailyFrequency: {
+      distribution: { charges_per_day: number; frequency: number }[];
+      stats: { mean: number; median: number; stddev: number; total_user_days: number };
+    };
+    scatterPlots: {
+      startVsCharge: { start_percentage: number; charge_gained: number; duration_minutes: number }[];
+      durationVsCharge: { duration_minutes: number; charge_gained: number; start_percentage: number }[];
+    };
+    batteryTide: { hour: number; avg_battery_level: number; user_count: number }[];
+    transitionMatrix: { start_bucket: number; end_bucket: number; count: number }[];
+  };
+}
+

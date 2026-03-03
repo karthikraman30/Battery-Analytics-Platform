@@ -8,6 +8,9 @@
 /old_data/
 /sample_data/
 /pgdata/
+/battery_data/
+/new_data_users/
+*.csv
 
 # ===========================
 # DEPENDENCIES
