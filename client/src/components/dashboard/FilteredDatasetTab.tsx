@@ -36,13 +36,13 @@ function CombinedBoxPlot({
         const boxBottom = centerY + boxHeight / 2
         return (
             <g key={rowIndex}>
-                <line x1={scale(data.whiskerLow)} y1={centerY} x2={scale(data.whiskerHigh)} y2={centerY} stroke={color} strokeWidth={2} />
-                <line x1={scale(data.whiskerLow)} y1={boxTop} x2={scale(data.whiskerLow)} y2={boxBottom} stroke={color} strokeWidth={2} />
-                <line x1={scale(data.whiskerHigh)} y1={boxTop} x2={scale(data.whiskerHigh)} y2={boxBottom} stroke={color} strokeWidth={2} />
-                <rect x={scale(data.q1)} y={boxTop} width={scale(data.q3) - scale(data.q1)} height={boxHeight} fill={color} fillOpacity={0.3} stroke={color} strokeWidth={2} rx={4} />
-                <line x1={scale(data.median)} y1={boxTop} x2={scale(data.median)} y2={boxBottom} stroke={color} strokeWidth={3} />
-                <line x1={scale(data.mean)} y1={boxTop} x2={scale(data.mean)} y2={boxBottom} stroke={color} strokeWidth={2} strokeDasharray="4,4" opacity={0.8} />
-                <circle cx={scale(data.mean)} cy={centerY} r={5} fill="white" stroke={color} strokeWidth={2} />
+                <line x1={scale(n(data.whiskerLow))} y1={centerY} x2={scale(n(data.whiskerHigh))} y2={centerY} stroke={color} strokeWidth={2} />
+                <line x1={scale(n(data.whiskerLow))} y1={boxTop} x2={scale(n(data.whiskerLow))} y2={boxBottom} stroke={color} strokeWidth={2} />
+                <line x1={scale(n(data.whiskerHigh))} y1={boxTop} x2={scale(n(data.whiskerHigh))} y2={boxBottom} stroke={color} strokeWidth={2} />
+                <rect x={scale(n(data.q1))} y={boxTop} width={scale(n(data.q3)) - scale(n(data.q1))} height={boxHeight} fill={color} fillOpacity={0.3} stroke={color} strokeWidth={2} rx={4} />
+                <line x1={scale(n(data.median))} y1={boxTop} x2={scale(n(data.median))} y2={boxBottom} stroke={color} strokeWidth={3} />
+                <line x1={scale(n(data.mean))} y1={boxTop} x2={scale(n(data.mean))} y2={boxBottom} stroke={color} strokeWidth={2} strokeDasharray="4,4" opacity={0.8} />
+                <circle cx={scale(n(data.mean))} cy={centerY} r={5} fill="white" stroke={color} strokeWidth={2} />
             </g>
         )
     }
@@ -82,12 +82,12 @@ function BoxStats({ data, label, color }: { data: BoxPlotData; label: string; co
                 {label} Statistics
             </div>
             <div className="grid grid-cols-2 gap-2 text-xs">
-                <div><span className="text-muted-foreground">Min:</span> <strong>{data.whiskerLow.toFixed(1)}%</strong></div>
-                <div><span className="text-muted-foreground">Q1:</span> <strong>{data.q1.toFixed(1)}%</strong></div>
-                <div><span className="text-muted-foreground">Median:</span> <strong>{data.median.toFixed(1)}%</strong></div>
-                <div><span className="text-muted-foreground">Q3:</span> <strong>{data.q3.toFixed(1)}%</strong></div>
-                <div><span className="text-muted-foreground">Max:</span> <strong>{data.whiskerHigh.toFixed(1)}%</strong></div>
-                <div><span className="text-muted-foreground">Mean:</span> <strong>{data.mean.toFixed(1)}%</strong></div>
+                <div><span className="text-muted-foreground">Min:</span> <strong>{n(data.whiskerLow).toFixed(1)}%</strong></div>
+                <div><span className="text-muted-foreground">Q1:</span> <strong>{n(data.q1).toFixed(1)}%</strong></div>
+                <div><span className="text-muted-foreground">Median:</span> <strong>{n(data.median).toFixed(1)}%</strong></div>
+                <div><span className="text-muted-foreground">Q3:</span> <strong>{n(data.q3).toFixed(1)}%</strong></div>
+                <div><span className="text-muted-foreground">Max:</span> <strong>{n(data.whiskerHigh).toFixed(1)}%</strong></div>
+                <div><span className="text-muted-foreground">Mean:</span> <strong>{n(data.mean).toFixed(1)}%</strong></div>
                 <div className="col-span-2"><span className="text-muted-foreground">n:</span> <strong>{data.count.toLocaleString()}</strong></div>
             </div>
         </div>
@@ -98,26 +98,26 @@ function BoxPlotChart({ data, label, unit = '', color = 'var(--chart-1)', domain
     data: BoxPlotData; label: string; unit?: string; color?: string; domainMax?: number;
 }) {
     const { whiskerLow, q1, median, q3, whiskerHigh, mean, outliersBelow, outliersAbove, count } = data
-    const max = domainMax ?? Math.ceil(whiskerHigh * 1.1)
+    const max = domainMax ?? Math.ceil(n(whiskerHigh) * 1.1)
     const scale = (v: number) => (v / max) * 100
     return (
         <div className="space-y-2">
             <div className="text-sm font-medium">{label}</div>
             <svg viewBox="0 0 400 80" className="w-full" style={{ maxHeight: 80 }}>
-                <line x1={scale(whiskerLow) * 3.6 + 20} y1={40} x2={scale(whiskerHigh) * 3.6 + 20} y2={40} stroke={color} strokeWidth={1.5} />
-                <line x1={scale(whiskerLow) * 3.6 + 20} y1={30} x2={scale(whiskerLow) * 3.6 + 20} y2={50} stroke={color} strokeWidth={1.5} />
-                <line x1={scale(whiskerHigh) * 3.6 + 20} y1={30} x2={scale(whiskerHigh) * 3.6 + 20} y2={50} stroke={color} strokeWidth={1.5} />
-                <rect x={scale(q1) * 3.6 + 20} y={22} width={(scale(q3) - scale(q1)) * 3.6} height={36} fill={color} fillOpacity={0.2} stroke={color} strokeWidth={1.5} rx={3} />
-                <line x1={scale(median) * 3.6 + 20} y1={20} x2={scale(median) * 3.6 + 20} y2={60} stroke={color} strokeWidth={2.5} />
-                <polygon points={`${scale(mean) * 3.6 + 20},32 ${scale(mean) * 3.6 + 24},40 ${scale(mean) * 3.6 + 20},48 ${scale(mean) * 3.6 + 16},40`} fill="white" stroke={color} strokeWidth={1} />
+                <line x1={scale(n(whiskerLow)) * 3.6 + 20} y1={40} x2={scale(n(whiskerHigh)) * 3.6 + 20} y2={40} stroke={color} strokeWidth={1.5} />
+                <line x1={scale(n(whiskerLow)) * 3.6 + 20} y1={30} x2={scale(n(whiskerLow)) * 3.6 + 20} y2={50} stroke={color} strokeWidth={1.5} />
+                <line x1={scale(n(whiskerHigh)) * 3.6 + 20} y1={30} x2={scale(n(whiskerHigh)) * 3.6 + 20} y2={50} stroke={color} strokeWidth={1.5} />
+                <rect x={scale(n(q1)) * 3.6 + 20} y={22} width={(scale(n(q3)) - scale(n(q1))) * 3.6} height={36} fill={color} fillOpacity={0.2} stroke={color} strokeWidth={1.5} rx={3} />
+                <line x1={scale(n(median)) * 3.6 + 20} y1={20} x2={scale(n(median)) * 3.6 + 20} y2={60} stroke={color} strokeWidth={2.5} />
+                <polygon points={`${scale(n(mean)) * 3.6 + 20},32 ${scale(n(mean)) * 3.6 + 24},40 ${scale(n(mean)) * 3.6 + 20},48 ${scale(n(mean)) * 3.6 + 16},40`} fill="white" stroke={color} strokeWidth={1} />
             </svg>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                <span>Min: <strong>{whiskerLow.toFixed(1)}{unit}</strong></span>
-                <span>Q1: <strong>{q1.toFixed(1)}{unit}</strong></span>
-                <span>Median: <strong className="text-foreground">{median.toFixed(1)}{unit}</strong></span>
-                <span>Q3: <strong>{q3.toFixed(1)}{unit}</strong></span>
-                <span>Max: <strong>{whiskerHigh.toFixed(1)}{unit}</strong></span>
-                <span>Mean: <strong>{mean.toFixed(1)}{unit}</strong></span>
+                <span>Min: <strong>{n(whiskerLow).toFixed(1)}{unit}</strong></span>
+                <span>Q1: <strong>{n(q1).toFixed(1)}{unit}</strong></span>
+                <span>Median: <strong className="text-foreground">{n(median).toFixed(1)}{unit}</strong></span>
+                <span>Q3: <strong>{n(q3).toFixed(1)}{unit}</strong></span>
+                <span>Max: <strong>{n(whiskerHigh).toFixed(1)}{unit}</strong></span>
+                <span>Mean: <strong>{n(mean).toFixed(1)}{unit}</strong></span>
                 <span>n={count.toLocaleString()}</span>
             </div>
             {(outliersBelow > 0 || outliersAbove > 0) && (
