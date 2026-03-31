@@ -18,6 +18,7 @@ import type {
     CleanDataAnalysis,
     FullDatasetAnalysis,
     FilteredDatasetAnalysis,
+    AdditionalAnalysis,
 } from '@/lib/api'
 
 export function useChargingStats() {
@@ -212,6 +213,16 @@ export function useFilteredDatasetAnalysis() {
     })
 }
 
+export function useAdditionalAnalysis() {
+    return useQuery({
+        queryKey: ['additionalAnalysis'],
+        queryFn: async () => {
+            const response = await chargingApi.getAdditionalAnalysis()
+            return response.data
+        },
+    })
+}
+
 export type {
     ChargingDbStats,
     ChargingDbUser,
@@ -230,4 +241,5 @@ export type {
     CleanDataAnalysis,
     FullDatasetAnalysis,
     FilteredDatasetAnalysis,
+    AdditionalAnalysis,
 }

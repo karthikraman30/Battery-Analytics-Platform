@@ -1078,50 +1078,360 @@ export async function getCleanDataAnalysis() {
   };
 }
 
-// ─── Full Dataset Analysis (ALL users, no filters) ──────────────────────────
+// ─── Helper: build box plot from a column + filter ──────────────────────────
 
-export async function getFullDatasetAnalysis() {
-  // Helper: box plot query with no user filter
-  const boxPlotQuery = async (column: string, extraFilter = '') => {
-    const r = await queryCharging(`
-      SELECT
-        MIN(${column}) as min_val,
-        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY ${column}) as q1,
-        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${column}) as median,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY ${column}) as q3,
-        MAX(${column}) as max_val,
-        ROUND(AVG(${column})::numeric, 2) as mean,
-        COUNT(*) as count
-      FROM charging_sessions
-      WHERE TRUE ${extraFilter}
-    `);
-    const row = r.rows[0] as any;
-    const iqr = Number(row.q3) - Number(row.q1);
-    const wLow = Number(row.q1) - 1.5 * iqr;
-    const wHigh = Number(row.q3) + 1.5 * iqr;
+async function buildBoxPlot(column: string, filter: string): Promise<{
+  min: number; q1: number; median: number; q3: number; max: number;
+  mean: number; count: number;
+  whiskerLow: number; whiskerHigh: number;
+  outliersBelow: number; outliersAbove: number;
+}> {
+  const r = await queryCharging(`
+    SELECT
+      MIN(${column}) as min_val,
+      PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY ${column}) as q1,
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${column}) as median,
+      PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY ${column}) as q3,
+      MAX(${column}) as max_val,
+      ROUND(AVG(${column})::numeric, 2) as mean,
+      COUNT(*) as count
+    FROM charging_sessions
+    WHERE ${filter}
+  `);
+  const row = r.rows[0] as any;
+  if (!row || row.count === '0' || row.count === 0) {
+    return { min: 0, q1: 0, median: 0, q3: 0, max: 0, mean: 0, count: 0, whiskerLow: 0, whiskerHigh: 0, outliersBelow: 0, outliersAbove: 0 };
+  }
+  const iqr = Number(row.q3) - Number(row.q1);
+  const wLow = Number(row.q1) - 1.5 * iqr;
+  const wHigh = Number(row.q3) + 1.5 * iqr;
 
-    const outliers = await queryCharging(`
-      SELECT
-        COUNT(*) FILTER (WHERE ${column} < $1::numeric) as below,
-        COUNT(*) FILTER (WHERE ${column} > $2::numeric) as above,
-        MIN(${column}) FILTER (WHERE ${column} >= $1::numeric) as whisker_low,
-        MAX(${column}) FILTER (WHERE ${column} <= $2::numeric) as whisker_high
-      FROM charging_sessions
-      WHERE TRUE ${extraFilter}
-    `, [wLow, wHigh]);
-    const o = outliers.rows[0] as any;
+  const outliers = await queryCharging(`
+    SELECT
+      COUNT(*) FILTER (WHERE ${column} < $1::numeric) as below,
+      COUNT(*) FILTER (WHERE ${column} > $2::numeric) as above,
+      MIN(${column}) FILTER (WHERE ${column} >= $1::numeric) as whisker_low,
+      MAX(${column}) FILTER (WHERE ${column} <= $2::numeric) as whisker_high
+    FROM charging_sessions
+    WHERE ${filter}
+  `, [wLow, wHigh]);
+  const o = outliers.rows[0] as any;
 
-    return {
-      min: Number(row.min_val), q1: Number(row.q1), median: Number(row.median),
-      q3: Number(row.q3), max: Number(row.max_val), mean: Number(row.mean),
-      count: Number(row.count),
-      whiskerLow: Number(o.whisker_low ?? row.min_val),
-      whiskerHigh: Number(o.whisker_high ?? row.max_val),
-      outliersBelow: Number(o.below), outliersAbove: Number(o.above),
-    };
+  return {
+    min: Number(row.min_val), q1: Number(row.q1), median: Number(row.median),
+    q3: Number(row.q3), max: Number(row.max_val), mean: Number(row.mean),
+    count: Number(row.count),
+    whiskerLow: Number(o.whisker_low ?? row.min_val),
+    whiskerHigh: Number(o.whisker_high ?? row.max_val),
+    outliersBelow: Number(o.below), outliersAbove: Number(o.above),
+  };
+}
+
+// ─── Helper: build CDFs ─────────────────────────────────────────────────────
+
+async function buildCDFs(filter: string) {
+  const sample = (rows: { x: number; cdf: number }[], maxPoints = 200) => {
+    if (rows.length <= maxPoints) return rows;
+    const step = Math.ceil(rows.length / maxPoints);
+    const sampled = rows.filter((_, i) => i % step === 0);
+    if (sampled[sampled.length - 1] !== rows[rows.length - 1]) sampled.push(rows[rows.length - 1]);
+    return sampled;
   };
 
-  // 1. Summary stats
+  const levelCdf = await queryCharging(`
+    WITH ordered AS (
+      SELECT start_percentage as level,
+        ROW_NUMBER() OVER (ORDER BY start_percentage) as rn,
+        COUNT(*) OVER () as total
+      FROM charging_sessions WHERE is_complete = TRUE AND ${filter}
+    )
+    SELECT level as x, ROUND((rn::numeric / total), 4) as cdf FROM ordered ORDER BY level
+  `);
+  const durationCdf = await queryCharging(`
+    WITH ordered AS (
+      SELECT LEAST(duration_minutes, 150) as duration,
+        ROW_NUMBER() OVER (ORDER BY duration_minutes) as rn,
+        COUNT(*) OVER () as total
+      FROM charging_sessions WHERE is_complete = TRUE AND duration_minutes >= 0 AND ${filter}
+    )
+    SELECT duration as x, ROUND((rn::numeric / total), 4) as cdf FROM ordered ORDER BY duration
+  `);
+  const chargeCdf = await queryCharging(`
+    WITH ordered AS (
+      SELECT charge_gained as cg,
+        ROW_NUMBER() OVER (ORDER BY charge_gained) as rn,
+        COUNT(*) OVER () as total
+      FROM charging_sessions WHERE is_complete = TRUE AND charge_gained >= 0 AND ${filter}
+    )
+    SELECT cg as x, ROUND((rn::numeric / total), 4) as cdf FROM ordered ORDER BY cg
+  `);
+
+  return {
+    levelCdf: sample(levelCdf.rows as any),
+    durationCdf: sample(durationCdf.rows as any),
+    chargeCdf: sample(chargeCdf.rows as any),
+  };
+}
+
+// ─── Helper: common analysis block (histograms, hourly, scatter, etc.) ──────
+
+async function buildAnalysisBlock(userFilter: string) {
+  // Box plots
+  const connectBox = await buildBoxPlot('start_percentage', `${userFilter}`);
+  const disconnectBox = await buildBoxPlot('end_percentage', `is_complete = TRUE AND ${userFilter}`);
+  const durationBox = await buildBoxPlot('duration_minutes', `is_complete = TRUE AND duration_minutes >= 0 AND ${userFilter}`);
+  const chargeGainedBox = await buildBoxPlot('charge_gained', `is_complete = TRUE AND charge_gained >= 0 AND ${userFilter}`);
+
+  // CDFs
+  const cdfs = await buildCDFs(userFilter);
+
+  // Duration histogram
+  const durationHist = await queryCharging(`
+    SELECT
+      CASE
+        WHEN duration_minutes < 5 THEN '0-5 min'
+        WHEN duration_minutes < 15 THEN '5-15 min'
+        WHEN duration_minutes < 30 THEN '15-30 min'
+        WHEN duration_minutes < 60 THEN '30-60 min'
+        WHEN duration_minutes < 120 THEN '1-2 hrs'
+        WHEN duration_minutes < 240 THEN '2-4 hrs'
+        WHEN duration_minutes < 480 THEN '4-8 hrs'
+        ELSE '8+ hrs'
+      END as bucket,
+      CASE
+        WHEN duration_minutes < 5 THEN 0 WHEN duration_minutes < 15 THEN 1
+        WHEN duration_minutes < 30 THEN 2 WHEN duration_minutes < 60 THEN 3
+        WHEN duration_minutes < 120 THEN 4 WHEN duration_minutes < 240 THEN 5
+        WHEN duration_minutes < 480 THEN 6 ELSE 7
+      END as bucket_order,
+      COUNT(*) as count
+    FROM charging_sessions
+    WHERE is_complete = TRUE AND duration_minutes >= 0 AND ${userFilter}
+    GROUP BY bucket, bucket_order ORDER BY bucket_order
+  `);
+
+  // Charge gained histogram with 5-min merge logic
+  // First, get merged sessions (sessions within 5 min merged)
+  const mergedChargeGained = await queryCharging(`
+    WITH session_gaps AS (
+      SELECT user_id, connect_time, disconnect_time, duration_minutes,
+        start_percentage, end_percentage, charge_gained, is_complete,
+        LAG(disconnect_time) OVER (PARTITION BY user_id ORDER BY connect_time) as prev_disconnect,
+        EXTRACT(EPOCH FROM (connect_time - LAG(disconnect_time) OVER (PARTITION BY user_id ORDER BY connect_time))) / 60.0 as gap_minutes
+      FROM charging_sessions
+      WHERE is_complete = TRUE AND ${userFilter}
+    ),
+    merged AS (
+      SELECT *,
+        CASE WHEN gap_minutes IS NULL OR gap_minutes > 5 THEN 1 ELSE 0 END as new_group
+      FROM session_gaps
+    ),
+    grouped AS (
+      SELECT *,
+        SUM(new_group) OVER (PARTITION BY user_id ORDER BY connect_time) as group_id
+      FROM merged
+    ),
+    merged_sessions AS (
+      SELECT user_id, group_id,
+        MIN(start_percentage) as start_pct,
+        MAX(end_percentage) as end_pct,
+        MAX(end_percentage) - MIN(start_percentage) as total_charge_gained,
+        COUNT(*) as sessions_in_group
+      FROM grouped
+      GROUP BY user_id, group_id
+    )
+    SELECT
+      CASE
+        WHEN total_charge_gained <= 0 THEN '0%'
+        WHEN total_charge_gained <= 10 THEN '1-10%'
+        WHEN total_charge_gained <= 20 THEN '11-20%'
+        WHEN total_charge_gained <= 30 THEN '21-30%'
+        WHEN total_charge_gained <= 40 THEN '31-40%'
+        WHEN total_charge_gained <= 50 THEN '41-50%'
+        WHEN total_charge_gained <= 60 THEN '51-60%'
+        WHEN total_charge_gained <= 70 THEN '61-70%'
+        WHEN total_charge_gained <= 80 THEN '71-80%'
+        WHEN total_charge_gained <= 90 THEN '81-90%'
+        ELSE '91-100%'
+      END as bucket,
+      CASE
+        WHEN total_charge_gained <= 0 THEN 0
+        WHEN total_charge_gained <= 10 THEN 1 WHEN total_charge_gained <= 20 THEN 2
+        WHEN total_charge_gained <= 30 THEN 3 WHEN total_charge_gained <= 40 THEN 4
+        WHEN total_charge_gained <= 50 THEN 5 WHEN total_charge_gained <= 60 THEN 6
+        WHEN total_charge_gained <= 70 THEN 7 WHEN total_charge_gained <= 80 THEN 8
+        WHEN total_charge_gained <= 90 THEN 9 ELSE 10
+      END as bucket_order,
+      COUNT(*) as count
+    FROM merged_sessions
+    WHERE total_charge_gained > 0 AND total_charge_gained <= 100
+    GROUP BY bucket, bucket_order ORDER BY bucket_order
+  `);
+
+  // Merge stats
+  const mergeStats = await queryCharging(`
+    WITH session_gaps AS (
+      SELECT user_id, connect_time,
+        LAG(disconnect_time) OVER (PARTITION BY user_id ORDER BY connect_time) as prev_disconnect,
+        EXTRACT(EPOCH FROM (connect_time - LAG(disconnect_time) OVER (PARTITION BY user_id ORDER BY connect_time))) / 60.0 as gap_minutes,
+        charge_gained
+      FROM charging_sessions
+      WHERE is_complete = TRUE AND ${userFilter}
+    ),
+    merged AS (
+      SELECT *, CASE WHEN gap_minutes IS NULL OR gap_minutes > 5 THEN 1 ELSE 0 END as new_group
+      FROM session_gaps
+    ),
+    grouped AS (
+      SELECT *, SUM(new_group) OVER (PARTITION BY user_id ORDER BY connect_time) as group_id
+      FROM merged
+    )
+    SELECT
+      (SELECT COUNT(*) FROM charging_sessions WHERE is_complete = TRUE AND ${userFilter}) as original_sessions,
+      COUNT(DISTINCT (user_id::text || '-' || group_id::text)) as merged_sessions,
+      (SELECT COUNT(*) FROM charging_sessions WHERE is_complete = TRUE AND ${userFilter}) -
+        COUNT(DISTINCT (user_id::text || '-' || group_id::text)) as sessions_merged_away,
+      (SELECT COUNT(*) FROM charging_sessions WHERE is_complete = TRUE AND charge_gained < 0 AND ${userFilter}) as negative_excluded,
+      0 as above_100_excluded
+    FROM grouped
+  `);
+  const ms = mergeStats.rows[0] as any;
+
+  // Connect/disconnect level distribution
+  const connectLevel = await queryCharging(`
+    SELECT (FLOOR(start_percentage / 10) * 10)::int as level_bucket, COUNT(*) as count
+    FROM charging_sessions WHERE ${userFilter}
+    GROUP BY level_bucket ORDER BY level_bucket
+  `);
+  const disconnectLevel = await queryCharging(`
+    SELECT (FLOOR(end_percentage / 10) * 10)::int as level_bucket, COUNT(*) as count
+    FROM charging_sessions WHERE is_complete = TRUE AND ${userFilter}
+    GROUP BY level_bucket ORDER BY level_bucket
+  `);
+
+  // Hourly pattern
+  const hourlyPattern = await queryCharging(`
+    SELECT EXTRACT(HOUR FROM connect_time)::int as hour,
+      COUNT(*) as session_count,
+      ROUND(AVG(start_percentage)::numeric, 1) as avg_start_level,
+      ROUND(AVG(charge_gained)::numeric, 1) as avg_charge_gained
+    FROM charging_sessions
+    WHERE is_complete = TRUE AND ${userFilter}
+    GROUP BY hour ORDER BY hour
+  `);
+
+  // Daily frequency
+  const dailyFreqDist = await queryCharging(`
+    WITH daily_counts AS (
+      SELECT user_id, DATE(connect_time) as day, COUNT(*) as charges_per_day
+      FROM charging_sessions WHERE ${userFilter}
+      GROUP BY user_id, DATE(connect_time)
+    )
+    SELECT charges_per_day, COUNT(*) as frequency
+    FROM daily_counts GROUP BY charges_per_day ORDER BY charges_per_day
+  `);
+  const dailyFreqStats = await queryCharging(`
+    WITH daily_counts AS (
+      SELECT user_id, DATE(connect_time) as day, COUNT(*) as charges_per_day
+      FROM charging_sessions WHERE ${userFilter}
+      GROUP BY user_id, DATE(connect_time)
+    )
+    SELECT ROUND(AVG(charges_per_day)::numeric, 2) as mean,
+      ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY charges_per_day)::numeric, 1) as median,
+      ROUND(STDDEV(charges_per_day)::numeric, 2) as stddev,
+      MIN(charges_per_day) as min_val, MAX(charges_per_day) as max_val,
+      COUNT(*) as total_user_days
+    FROM daily_counts
+  `);
+
+  // Scatter plots
+  const scatterStartVsCharge = await queryCharging(`
+    SELECT start_percentage, charge_gained, duration_minutes
+    FROM charging_sessions
+    WHERE is_complete = TRUE AND charge_gained >= 0 AND ${userFilter}
+    ORDER BY RANDOM() LIMIT 2000
+  `);
+  const scatterDurationVsCharge = await queryCharging(`
+    SELECT duration_minutes, charge_gained, start_percentage
+    FROM charging_sessions
+    WHERE is_complete = TRUE AND duration_minutes >= 0 AND charge_gained >= 0 AND ${userFilter}
+    ORDER BY RANDOM() LIMIT 2000
+  `);
+
+  // Battery tide
+  const batteryTide = await queryCharging(`
+    SELECT EXTRACT(HOUR FROM connect_time)::int as hour,
+      ROUND(AVG(start_percentage)::numeric, 1) as avg_battery_level,
+      COUNT(DISTINCT user_id) as user_count
+    FROM charging_sessions
+    WHERE ${userFilter}
+    GROUP BY hour ORDER BY hour
+  `);
+
+  // Transition matrix
+  const transitionMatrix = await queryCharging(`
+    SELECT
+      (FLOOR(start_percentage / 10) * 10)::int as start_bucket,
+      (FLOOR(end_percentage / 10) * 10)::int as end_bucket,
+      COUNT(*) as count
+    FROM charging_sessions
+    WHERE is_complete = TRUE AND ${userFilter}
+    GROUP BY start_bucket, end_bucket ORDER BY start_bucket, end_bucket
+  `);
+
+  // Heatmap
+  const heatmap = await queryCharging(`
+    SELECT EXTRACT(DOW FROM connect_time)::int as day_of_week,
+      EXTRACT(HOUR FROM connect_time)::int as hour,
+      COUNT(*) as session_count
+    FROM charging_sessions
+    WHERE is_complete = TRUE AND ${userFilter}
+    GROUP BY day_of_week, hour ORDER BY day_of_week, hour
+  `);
+
+  return {
+    boxPlots: {
+      connectLevel: connectBox,
+      disconnectLevel: disconnectBox,
+      duration: durationBox,
+      chargeGained: chargeGainedBox,
+    },
+    cdfs,
+    histograms: {
+      duration: durationHist.rows,
+      chargeGained: mergedChargeGained.rows,
+      chargeGainedMergeStats: {
+        original_sessions: Number(ms?.original_sessions || 0),
+        merged_sessions: Number(ms?.merged_sessions || 0),
+        sessions_merged_away: Number(ms?.sessions_merged_away || 0),
+        negative_excluded: Number(ms?.negative_excluded || 0),
+        above_100_excluded: Number(ms?.above_100_excluded || 0),
+        sessions_in_chart: mergedChargeGained.rows.reduce((s: number, r: any) => s + Number(r.count), 0),
+      },
+      connectLevel: connectLevel.rows,
+      disconnectLevel: disconnectLevel.rows,
+    },
+    hourlyPattern: hourlyPattern.rows,
+    dailyFrequency: {
+      distribution: dailyFreqDist.rows,
+      stats: dailyFreqStats.rows[0] || { mean: 0, median: 0, stddev: 0, min_val: 0, max_val: 0, total_user_days: 0 },
+    },
+    scatterPlots: {
+      startVsCharge: scatterStartVsCharge.rows,
+      durationVsCharge: scatterDurationVsCharge.rows,
+    },
+    batteryTide: batteryTide.rows,
+    transitionMatrix: transitionMatrix.rows,
+    heatmap: heatmap.rows,
+  };
+}
+
+// ─── Full Dataset Analysis (all users) ──────────────────────────────────────
+
+export async function getFullDatasetAnalysis() {
+  const allFilter = '1=1';
+
+  // Summary stats
   const summary = await queryCharging(`
     SELECT
       (SELECT COUNT(*) FROM user_stats) as total_users,
@@ -1139,316 +1449,23 @@ export async function getFullDatasetAnalysis() {
     FROM charging_sessions
   `);
 
-  // 2. Box plots
-  const connectBox = await boxPlotQuery('start_percentage');
-  const disconnectBox = await boxPlotQuery('end_percentage', 'AND is_complete = TRUE');
-  const durationBox = await boxPlotQuery('duration_minutes', 'AND is_complete = TRUE AND duration_minutes >= 0');
-  const chargeGainedBox = await boxPlotQuery('charge_gained', 'AND is_complete = TRUE AND charge_gained >= 0');
-
-  // 3. CDFs
-  const levelCdf = await queryCharging(`
-    WITH ordered AS (
-      SELECT start_percentage as level,
-        ROW_NUMBER() OVER (ORDER BY start_percentage) as rn,
-        COUNT(*) OVER () as total
-      FROM charging_sessions WHERE is_complete = TRUE
-    )
-    SELECT level as x, ROUND((rn::numeric / total), 4) as cdf
-    FROM ordered ORDER BY level
-  `);
-  const durationCdf = await queryCharging(`
-    WITH ordered AS (
-      SELECT LEAST(duration_minutes, 150) as duration,
-        ROW_NUMBER() OVER (ORDER BY duration_minutes) as rn,
-        COUNT(*) OVER () as total
-      FROM charging_sessions WHERE is_complete = TRUE AND duration_minutes >= 0
-    )
-    SELECT duration as x, ROUND((rn::numeric / total), 4) as cdf
-    FROM ordered ORDER BY duration
-  `);
-  // CDF for charge gained
-  const chargeCdf = await queryCharging(`
-    WITH ordered AS (
-      SELECT charge_gained as cg,
-        ROW_NUMBER() OVER (ORDER BY charge_gained) as rn,
-        COUNT(*) OVER () as total
-      FROM charging_sessions WHERE is_complete = TRUE AND charge_gained >= 0
-    )
-    SELECT cg as x, ROUND((rn::numeric / total), 4) as cdf
-    FROM ordered ORDER BY cg
-  `);
-
-  const sample = (rows: any[], maxPoints = 200) => {
-    if (rows.length <= maxPoints) return rows;
-    const step = Math.ceil(rows.length / maxPoints);
-    const sampled = rows.filter((_: any, i: number) => i % step === 0);
-    if (sampled[sampled.length - 1] !== rows[rows.length - 1]) sampled.push(rows[rows.length - 1]);
-    return sampled;
-  };
-
-  // 4. Histograms
-  const durationHist = await queryCharging(`
-    SELECT
-      CASE
-        WHEN duration_minutes < 5 THEN '0-5 min'
-        WHEN duration_minutes < 15 THEN '5-15 min'
-        WHEN duration_minutes < 30 THEN '15-30 min'
-        WHEN duration_minutes < 60 THEN '30-60 min'
-        WHEN duration_minutes < 120 THEN '1-2 hrs'
-        WHEN duration_minutes < 240 THEN '2-4 hrs'
-        WHEN duration_minutes < 480 THEN '4-8 hrs'
-        ELSE '8+ hrs'
-      END as bucket,
-      CASE
-        WHEN duration_minutes < 5 THEN 0
-        WHEN duration_minutes < 15 THEN 1
-        WHEN duration_minutes < 30 THEN 2
-        WHEN duration_minutes < 60 THEN 3
-        WHEN duration_minutes < 120 THEN 4
-        WHEN duration_minutes < 240 THEN 5
-        WHEN duration_minutes < 480 THEN 6
-        ELSE 7
-      END as bucket_order,
-      COUNT(*) as count
-    FROM charging_sessions
-    WHERE is_complete = TRUE AND duration_minutes >= 0
-    GROUP BY bucket, bucket_order ORDER BY bucket_order
-  `);
-
-  const chargeHist = await queryCharging(`
-    WITH ordered_sessions AS (
-      SELECT *,
-        LAG(disconnect_time) OVER (PARTITION BY user_id ORDER BY connect_time) as prev_disconnect_time,
-        LAG(end_percentage) OVER (PARTITION BY user_id ORDER BY connect_time) as prev_end_pct
-      FROM charging_sessions
-      WHERE is_complete = TRUE
-    ),
-    merge_flags AS (
-      SELECT *,
-        CASE WHEN prev_disconnect_time IS NOT NULL
-          AND EXTRACT(EPOCH FROM (connect_time - prev_disconnect_time)) / 60.0 <= 5
-          THEN 0 ELSE 1 END as is_new_group
-      FROM ordered_sessions
-    ),
-    groups AS (
-      SELECT *,
-        SUM(is_new_group) OVER (PARTITION BY user_id ORDER BY connect_time ROWS UNBOUNDED PRECEDING) as grp
-      FROM merge_flags
-    ),
-    merged AS (
-      SELECT user_id, grp,
-        MIN(start_percentage) as connect_battery,
-        MAX(end_percentage) as disconnect_battery,
-        MAX(end_percentage) - MIN(start_percentage) as charge_gained,
-        EXTRACT(EPOCH FROM (MAX(disconnect_time) - MIN(connect_time))) / 60.0 as duration_minutes,
-        COUNT(*) as sessions_in_group
-      FROM groups
-      GROUP BY user_id, grp
-    )
-    SELECT
-      CASE
-        WHEN charge_gained >= 0 AND charge_gained <= 10 THEN '0-10%'
-        WHEN charge_gained <= 20 THEN '10-20%'
-        WHEN charge_gained <= 30 THEN '20-30%'
-        WHEN charge_gained <= 40 THEN '30-40%'
-        WHEN charge_gained <= 50 THEN '40-50%'
-        WHEN charge_gained <= 60 THEN '50-60%'
-        WHEN charge_gained <= 70 THEN '60-70%'
-        WHEN charge_gained <= 80 THEN '70-80%'
-        WHEN charge_gained <= 90 THEN '80-90%'
-        WHEN charge_gained <= 100 THEN '90-100%'
-      END as bucket,
-      CASE
-        WHEN charge_gained >= 0 AND charge_gained <= 10 THEN 0
-        WHEN charge_gained <= 20 THEN 1
-        WHEN charge_gained <= 30 THEN 2
-        WHEN charge_gained <= 40 THEN 3
-        WHEN charge_gained <= 50 THEN 4
-        WHEN charge_gained <= 60 THEN 5
-        WHEN charge_gained <= 70 THEN 6
-        WHEN charge_gained <= 80 THEN 7
-        WHEN charge_gained <= 90 THEN 8
-        WHEN charge_gained <= 100 THEN 9
-      END as bucket_order,
-      COUNT(*) as count
-    FROM merged
-    WHERE charge_gained >= 0 AND charge_gained <= 100
-    GROUP BY bucket, bucket_order
-    ORDER BY bucket_order
-  `);
-
-  // Merge stats for charge gained
-  const chargeHist_mergeStats = await queryCharging(`
-    WITH ordered_sessions AS (
-      SELECT *,
-        LAG(disconnect_time) OVER (PARTITION BY user_id ORDER BY connect_time) as prev_disconnect_time
-      FROM charging_sessions
-      WHERE is_complete = TRUE
-    ),
-    merge_flags AS (
-      SELECT *,
-        CASE WHEN prev_disconnect_time IS NOT NULL
-          AND EXTRACT(EPOCH FROM (connect_time - prev_disconnect_time)) / 60.0 <= 5
-          THEN 0 ELSE 1 END as is_new_group
-      FROM ordered_sessions
-    ),
-    groups AS (
-      SELECT *,
-        SUM(is_new_group) OVER (PARTITION BY user_id ORDER BY connect_time ROWS UNBOUNDED PRECEDING) as grp
-      FROM merge_flags
-    ),
-    merged AS (
-      SELECT user_id, grp,
-        MAX(end_percentage) - MIN(start_percentage) as charge_gained,
-        COUNT(*) as sessions_in_group
-      FROM groups
-      GROUP BY user_id, grp
-    )
-    SELECT
-      (SELECT COUNT(*) FROM charging_sessions WHERE is_complete = TRUE) as original_sessions,
-      COUNT(*) as merged_sessions,
-      (SELECT COUNT(*) FROM charging_sessions WHERE is_complete = TRUE) - COUNT(*) as sessions_merged_away,
-      COUNT(*) FILTER (WHERE charge_gained < 0) as negative_excluded,
-      COUNT(*) FILTER (WHERE charge_gained > 100) as above_100_excluded,
-      COUNT(*) FILTER (WHERE charge_gained >= 0 AND charge_gained <= 100) as sessions_in_chart
-    FROM merged
-  `);
-
-
-  const connectLevelHist = await queryCharging(`
-    SELECT (FLOOR(start_percentage / 10) * 10)::int as level_bucket, COUNT(*) as count
-    FROM charging_sessions
-    GROUP BY level_bucket ORDER BY level_bucket
-  `);
-
-  const disconnectLevelHist = await queryCharging(`
-    SELECT (FLOOR(end_percentage / 10) * 10)::int as level_bucket, COUNT(*) as count
-    FROM charging_sessions WHERE is_complete = TRUE
-    GROUP BY level_bucket ORDER BY level_bucket
-  `);
-
-  // 5. Daily charging frequency
-  const dailyFreqDist = await queryCharging(`
-    WITH daily_counts AS (
-      SELECT user_id, DATE(connect_time) as day, COUNT(*) as charges_per_day
-      FROM charging_sessions GROUP BY user_id, DATE(connect_time)
-    )
-    SELECT charges_per_day, COUNT(*) as frequency
-    FROM daily_counts GROUP BY charges_per_day ORDER BY charges_per_day
-  `);
-  const dailyFreqStats = await queryCharging(`
-    WITH daily_counts AS (
-      SELECT user_id, DATE(connect_time) as day, COUNT(*) as charges_per_day
-      FROM charging_sessions GROUP BY user_id, DATE(connect_time)
-    )
-    SELECT
-      ROUND(AVG(charges_per_day)::numeric, 2) as mean,
-      ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY charges_per_day)::numeric, 1) as median,
-      ROUND(STDDEV(charges_per_day)::numeric, 2) as stddev,
-      MIN(charges_per_day) as min_val, MAX(charges_per_day) as max_val,
-      COUNT(*) as total_user_days
-    FROM daily_counts
-  `);
-
-  // 6. Hourly patterns
-  const hourlyPattern = await queryCharging(`
-    SELECT EXTRACT(HOUR FROM connect_time)::int as hour,
-      COUNT(*) as session_count,
-      ROUND(AVG(start_percentage)::numeric, 1) as avg_start_level,
-      ROUND(AVG(charge_gained) FILTER (WHERE is_complete = TRUE AND charge_gained >= 0)::numeric, 1) as avg_charge_gained
-    FROM charging_sessions
-    GROUP BY hour ORDER BY hour
-  `);
-
-  // 7. Heatmap (day of week × hour)
-  const heatmap = await queryCharging(`
-    SELECT EXTRACT(DOW FROM connect_time)::int as day_of_week,
-      EXTRACT(HOUR FROM connect_time)::int as hour,
-      COUNT(*) as session_count
-    FROM charging_sessions
-    GROUP BY day_of_week, hour ORDER BY day_of_week, hour
-  `);
-
-  // 8. Scatter plots (sampled)
-  const scatterStartVsCharge = await queryCharging(`
-    SELECT start_percentage, charge_gained, duration_minutes
-    FROM charging_sessions
-    WHERE is_complete = TRUE AND charge_gained >= 0
-    ORDER BY RANDOM() LIMIT 2000
-  `);
-  const scatterDurationVsCharge = await queryCharging(`
-    SELECT duration_minutes, charge_gained, start_percentage
-    FROM charging_sessions
-    WHERE is_complete = TRUE AND duration_minutes >= 0 AND charge_gained >= 0
-    ORDER BY RANDOM() LIMIT 2000
-  `);
-
-  // Battery Tide: average battery level by hour of day across all users
-  const batteryTide = await queryCharging(`
-    SELECT
-      hour,
-      ROUND(AVG(avg_level)::numeric, 1) as avg_battery_level,
-      COUNT(*) as user_count
-    FROM (
-      SELECT
-        EXTRACT(HOUR FROM connect_time)::int as hour,
-        AVG(start_percentage) as avg_level
-      FROM charging_sessions
-      WHERE connect_time IS NOT NULL
-      GROUP BY user_id, EXTRACT(HOUR FROM connect_time)::int
-    ) per_user_hour
-    GROUP BY hour
-    ORDER BY hour
-  `);
-
-  // Transition Matrix: start % vs end % (10% buckets)
-  const transitionMatrix = await queryCharging(`
-    SELECT
-      (FLOOR(start_percentage / 10) * 10)::int as start_bucket,
-      (FLOOR(LEAST(end_percentage, 100) / 10) * 10)::int as end_bucket,
-      COUNT(*) as count
-    FROM charging_sessions
-    WHERE is_complete = TRUE AND start_percentage >= 0 AND end_percentage >= 0
-    GROUP BY start_bucket, end_bucket
-    ORDER BY start_bucket, end_bucket
-  `);
+  const block = await buildAnalysisBlock(allFilter);
 
   return {
     summary: summary.rows[0],
-    boxPlots: {
-      connectLevel: connectBox,
-      disconnectLevel: disconnectBox,
-      duration: durationBox,
-      chargeGained: chargeGainedBox,
-    },
-    cdfs: {
-      levelCdf: sample(levelCdf.rows as any),
-      durationCdf: sample(durationCdf.rows as any),
-      chargeCdf: sample(chargeCdf.rows as any),
-    },
-    histograms: {
-      duration: durationHist.rows,
-      chargeGained: chargeHist.rows,
-      chargeGainedMergeStats: chargeHist_mergeStats.rows[0],
-      connectLevel: connectLevelHist.rows,
-      disconnectLevel: disconnectLevelHist.rows,
-    },
-    dailyFrequency: {
-      distribution: dailyFreqDist.rows,
-      stats: dailyFreqStats.rows[0],
-    },
-    hourlyPattern: hourlyPattern.rows,
-    heatmap: heatmap.rows,
-    scatterPlots: {
-      startVsCharge: scatterStartVsCharge.rows,
-      durationVsCharge: scatterDurationVsCharge.rows,
-    },
-    batteryTide: batteryTide.rows,
-    transitionMatrix: transitionMatrix.rows,
+    boxPlots: block.boxPlots,
+    cdfs: block.cdfs,
+    histograms: block.histograms,
+    dailyFrequency: block.dailyFrequency,
+    hourlyPattern: block.hourlyPattern,
+    heatmap: block.heatmap,
+    scatterPlots: block.scatterPlots,
+    batteryTide: block.batteryTide,
+    transitionMatrix: block.transitionMatrix,
   };
 }
 
-// ─── Filtered Dataset Analysis (mismatch + observation period filtering) ─────
+// ─── Filtered Dataset Analysis ──────────────────────────────────────────────
 
 export async function getFilteredDatasetAnalysis() {
   const cleanFilter = `user_id IN (
@@ -1461,432 +1478,441 @@ export async function getFilteredDatasetAnalysis() {
       ) >= 8
   )`;
 
-  // 1. Mismatch distribution: every user's mismatch value, bucketed
+  // Mismatch distribution
   const mismatchDist = await queryCharging(`
     SELECT
       CASE
-        WHEN event_mismatch = 0 THEN '0 (perfect)'
+        WHEN event_mismatch = 0 THEN '0'
         WHEN event_mismatch = 1 THEN '1'
         WHEN event_mismatch <= 5 THEN '2-5'
         WHEN event_mismatch <= 10 THEN '6-10'
         WHEN event_mismatch <= 20 THEN '11-20'
-        WHEN event_mismatch <= 50 THEN '21-50'
-        ELSE '51+'
+        ELSE '21+'
       END as bucket,
       CASE
-        WHEN event_mismatch = 0 THEN 0
-        WHEN event_mismatch = 1 THEN 1
-        WHEN event_mismatch <= 5 THEN 2
-        WHEN event_mismatch <= 10 THEN 3
-        WHEN event_mismatch <= 20 THEN 4
-        WHEN event_mismatch <= 50 THEN 5
-        ELSE 6
+        WHEN event_mismatch = 0 THEN 0 WHEN event_mismatch = 1 THEN 1
+        WHEN event_mismatch <= 5 THEN 2 WHEN event_mismatch <= 10 THEN 3
+        WHEN event_mismatch <= 20 THEN 4 ELSE 5
       END as bucket_order,
       COUNT(*) as user_count
     FROM user_stats
-    GROUP BY bucket, bucket_order
-    ORDER BY bucket_order
+    GROUP BY bucket, bucket_order ORDER BY bucket_order
   `);
 
-  // 2. Observation period distribution: days of data per user, bucketed
+  // Observation period distribution
   const obsDist = await queryCharging(`
     WITH user_days AS (
-      SELECT user_id, COUNT(DISTINCT DATE(event_timestamp)) as obs_days
+      SELECT user_id, COUNT(DISTINCT DATE(event_timestamp)) as days_of_data
       FROM charging_events GROUP BY user_id
     )
     SELECT
       CASE
-        WHEN obs_days <= 3 THEN '1-3 days'
-        WHEN obs_days <= 7 THEN '4-7 days'
-        WHEN obs_days <= 14 THEN '8-14 days'
-        WHEN obs_days <= 21 THEN '15-21 days'
-        WHEN obs_days <= 30 THEN '22-30 days'
-        ELSE '31+ days'
+        WHEN days_of_data <= 3 THEN '1-3 days'
+        WHEN days_of_data <= 7 THEN '4-7 days'
+        WHEN days_of_data <= 14 THEN '8-14 days'
+        WHEN days_of_data <= 21 THEN '15-21 days'
+        ELSE '22+ days'
       END as bucket,
       CASE
-        WHEN obs_days <= 3 THEN 0
-        WHEN obs_days <= 7 THEN 1
-        WHEN obs_days <= 14 THEN 2
-        WHEN obs_days <= 21 THEN 3
-        WHEN obs_days <= 30 THEN 4
-        ELSE 5
+        WHEN days_of_data <= 3 THEN 0 WHEN days_of_data <= 7 THEN 1
+        WHEN days_of_data <= 14 THEN 2 WHEN days_of_data <= 21 THEN 3
+        ELSE 4
       END as bucket_order,
       COUNT(*) as user_count,
-      ROUND(AVG(obs_days)::numeric, 1) as avg_days
+      ROUND(AVG(days_of_data)::numeric, 1) as avg_days
     FROM user_days
-    GROUP BY bucket, bucket_order
-    ORDER BY bucket_order
+    GROUP BY bucket, bucket_order ORDER BY bucket_order
   `);
 
-  // Observation period stats
+  // Observation stats
   const obsStats = await queryCharging(`
     WITH user_days AS (
-      SELECT user_id, COUNT(DISTINCT DATE(event_timestamp)) as obs_days
+      SELECT user_id, COUNT(DISTINCT DATE(event_timestamp)) as days_of_data
       FROM charging_events GROUP BY user_id
     )
     SELECT
-      ROUND(AVG(obs_days)::numeric, 1) as avg_days,
-      ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY obs_days)::numeric, 0) as median_days,
-      MIN(obs_days)::int as min_days,
-      MAX(obs_days)::int as max_days
+      ROUND(AVG(days_of_data)::numeric, 1) as avg_days,
+      ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY days_of_data)::numeric, 1) as median_days,
+      MIN(days_of_data)::int as min_days,
+      MAX(days_of_data)::int as max_days
     FROM user_days
   `);
 
-  // 3. Filter funnel — how many users pass each criterion
-  const filterFunnel = await queryCharging(`
+  // Filter funnel
+  const funnel = await queryCharging(`
     WITH user_days AS (
-      SELECT ce.user_id, COUNT(DISTINCT DATE(ce.event_timestamp)) as obs_days
-      FROM charging_events ce GROUP BY ce.user_id
+      SELECT user_id, COUNT(DISTINCT DATE(event_timestamp)) as days_of_data
+      FROM charging_events GROUP BY user_id
     )
     SELECT
       (SELECT COUNT(*) FROM user_stats) as all_users,
       (SELECT COUNT(*) FROM user_stats WHERE event_mismatch <= 10) as mismatch_pass,
-      (SELECT COUNT(*) FROM user_days WHERE obs_days >= 8) as obs_pass,
+      (SELECT COUNT(*) FROM user_days WHERE days_of_data >= 8) as obs_pass,
       (SELECT COUNT(*) FROM user_stats us
-       JOIN user_days ud ON us.user_id = ud.user_id
-       WHERE us.event_mismatch <= 10 AND ud.obs_days >= 8) as both_pass
+       WHERE event_mismatch <= 10
+         AND (SELECT COUNT(DISTINCT DATE(event_timestamp)) FROM charging_events ce WHERE ce.user_id = us.user_id) >= 8
+      ) as both_pass
   `);
 
-  // 4. Full vs Filtered comparison — summary stats side by side
+  // Comparison: full vs filtered
   const comparison = await queryCharging(`
-    WITH filtered AS (
-      SELECT * FROM charging_sessions WHERE ${cleanFilter}
-    )
-    SELECT
-      -- Full dataset
-      (SELECT COUNT(*) FROM user_stats) as full_users,
-      (SELECT COUNT(*) FROM charging_sessions) as full_sessions,
-      (SELECT COUNT(*) FROM charging_sessions WHERE is_complete = TRUE) as full_complete,
-      (SELECT ROUND(AVG(duration_minutes)::numeric, 1) FROM charging_sessions WHERE is_complete = TRUE) as full_avg_duration,
-      (SELECT ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_minutes)::numeric, 1) FROM charging_sessions WHERE is_complete = TRUE) as full_median_duration,
-      (SELECT ROUND(AVG(charge_gained)::numeric, 1) FROM charging_sessions WHERE is_complete = TRUE AND charge_gained >= 0) as full_avg_charge,
-      (SELECT ROUND(AVG(start_percentage)::numeric, 1) FROM charging_sessions) as full_avg_connect,
-      (SELECT ROUND(AVG(end_percentage)::numeric, 1) FROM charging_sessions WHERE is_complete = TRUE) as full_avg_disconnect,
-      -- Filtered dataset
-      (SELECT COUNT(*) FROM user_stats us WHERE event_mismatch <= 10 AND (SELECT COUNT(DISTINCT DATE(event_timestamp)) FROM charging_events ce WHERE ce.user_id = us.user_id) >= 8) as filt_users,
-      (SELECT COUNT(*) FROM filtered) as filt_sessions,
-      (SELECT COUNT(*) FROM filtered WHERE is_complete = TRUE) as filt_complete,
-      (SELECT ROUND(AVG(duration_minutes)::numeric, 1) FROM filtered WHERE is_complete = TRUE) as filt_avg_duration,
-      (SELECT ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_minutes)::numeric, 1) FROM filtered WHERE is_complete = TRUE) as filt_median_duration,
-      (SELECT ROUND(AVG(charge_gained)::numeric, 1) FROM filtered WHERE is_complete = TRUE AND charge_gained >= 0) as filt_avg_charge,
-      (SELECT ROUND(AVG(start_percentage)::numeric, 1) FROM filtered) as filt_avg_connect,
-      (SELECT ROUND(AVG(end_percentage)::numeric, 1) FROM filtered WHERE is_complete = TRUE) as filt_avg_disconnect
-  `);
-
-  // 5. Filtered analysis — same comprehensive analysis on filtered data
-  // Box plots
-  const filtBoxPlot = async (column: string, extraFilter = '') => {
-    const r = await queryCharging(`
+    WITH filtered_users AS (
+      SELECT user_id FROM user_stats us
+      WHERE event_mismatch <= 10
+        AND (SELECT COUNT(DISTINCT DATE(event_timestamp)) FROM charging_events ce WHERE ce.user_id = us.user_id) >= 8
+    ),
+    all_stats AS (
       SELECT
-        MIN(${column}) as min_val,
-        PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY ${column}) as q1,
-        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY ${column}) as median,
-        PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY ${column}) as q3,
-        MAX(${column}) as max_val,
-        ROUND(AVG(${column})::numeric, 2) as mean,
-        COUNT(*) as count
+        (SELECT COUNT(*) FROM user_stats) as total_users,
+        COUNT(*) as total_sessions,
+        COUNT(*) FILTER (WHERE is_complete) as complete_sessions,
+        ROUND(AVG(duration_minutes) FILTER (WHERE is_complete)::numeric, 1) as avg_duration,
+        ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_minutes) FILTER (WHERE is_complete)::numeric, 1) as median_duration,
+        ROUND(AVG(charge_gained) FILTER (WHERE is_complete AND charge_gained >= 0)::numeric, 1) as avg_charge,
+        ROUND(AVG(start_percentage)::numeric, 1) as avg_connect,
+        ROUND(AVG(end_percentage) FILTER (WHERE is_complete)::numeric, 1) as avg_disconnect
       FROM charging_sessions
-      WHERE ${cleanFilter} ${extraFilter}
-    `);
-    const row = r.rows[0] as any;
-    const iqr = Number(row.q3) - Number(row.q1);
-    const wLow = Number(row.q1) - 1.5 * iqr;
-    const wHigh = Number(row.q3) + 1.5 * iqr;
-
-    const outliers = await queryCharging(`
+    ),
+    filt_stats AS (
       SELECT
-        COUNT(*) FILTER (WHERE ${column} < $1::numeric) as below,
-        COUNT(*) FILTER (WHERE ${column} > $2::numeric) as above,
-        MIN(${column}) FILTER (WHERE ${column} >= $1::numeric) as whisker_low,
-        MAX(${column}) FILTER (WHERE ${column} <= $2::numeric) as whisker_high
+        (SELECT COUNT(*) FROM filtered_users) as total_users,
+        COUNT(*) as total_sessions,
+        COUNT(*) FILTER (WHERE is_complete) as complete_sessions,
+        ROUND(AVG(duration_minutes) FILTER (WHERE is_complete)::numeric, 1) as avg_duration,
+        ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_minutes) FILTER (WHERE is_complete)::numeric, 1) as median_duration,
+        ROUND(AVG(charge_gained) FILTER (WHERE is_complete AND charge_gained >= 0)::numeric, 1) as avg_charge,
+        ROUND(AVG(start_percentage)::numeric, 1) as avg_connect,
+        ROUND(AVG(end_percentage) FILTER (WHERE is_complete)::numeric, 1) as avg_disconnect
       FROM charging_sessions
-      WHERE ${cleanFilter} ${extraFilter}
-    `, [wLow, wHigh]);
-    const o = outliers.rows[0] as any;
-
-    return {
-      min: Number(row.min_val), q1: Number(row.q1), median: Number(row.median),
-      q3: Number(row.q3), max: Number(row.max_val), mean: Number(row.mean),
-      count: Number(row.count),
-      whiskerLow: Number(o.whisker_low ?? row.min_val),
-      whiskerHigh: Number(o.whisker_high ?? row.max_val),
-      outliersBelow: Number(o.below), outliersAbove: Number(o.above),
-    };
-  };
-
-  const fConnectBox = await filtBoxPlot('start_percentage');
-  const fDisconnectBox = await filtBoxPlot('end_percentage', 'AND is_complete = TRUE');
-  const fDurationBox = await filtBoxPlot('duration_minutes', 'AND is_complete = TRUE AND duration_minutes >= 0');
-  const fChargeBox = await filtBoxPlot('charge_gained', 'AND is_complete = TRUE AND charge_gained >= 0');
-
-  // CDFs for filtered data
-  const fLevelCdf = await queryCharging(`
-    WITH ordered AS (
-      SELECT start_percentage as level, ROW_NUMBER() OVER (ORDER BY start_percentage) as rn, COUNT(*) OVER () as total
-      FROM charging_sessions WHERE is_complete = TRUE AND ${cleanFilter}
-    )
-    SELECT level as x, ROUND((rn::numeric / total), 4) as cdf FROM ordered ORDER BY level
-  `);
-  const fDurCdf = await queryCharging(`
-    WITH ordered AS (
-      SELECT LEAST(duration_minutes, 150) as duration, ROW_NUMBER() OVER (ORDER BY duration_minutes) as rn, COUNT(*) OVER () as total
-      FROM charging_sessions WHERE is_complete = TRUE AND duration_minutes >= 0 AND ${cleanFilter}
-    )
-    SELECT duration as x, ROUND((rn::numeric / total), 4) as cdf FROM ordered ORDER BY duration
-  `);
-  const fChargeCdf = await queryCharging(`
-    WITH ordered AS (
-      SELECT charge_gained as cg, ROW_NUMBER() OVER (ORDER BY charge_gained) as rn, COUNT(*) OVER () as total
-      FROM charging_sessions WHERE is_complete = TRUE AND charge_gained >= 0 AND ${cleanFilter}
-    )
-    SELECT cg as x, ROUND((rn::numeric / total), 4) as cdf FROM ordered ORDER BY cg
-  `);
-
-  const sample = (rows: any[], maxPoints = 200) => {
-    if (rows.length <= maxPoints) return rows;
-    const step = Math.ceil(rows.length / maxPoints);
-    const sampled = rows.filter((_: any, i: number) => i % step === 0);
-    if (sampled[sampled.length - 1] !== rows[rows.length - 1]) sampled.push(rows[rows.length - 1]);
-    return sampled;
-  };
-
-  // Histograms for filtered data
-  const fDurHist = await queryCharging(`
-    SELECT
-      CASE
-        WHEN duration_minutes < 5 THEN '0-5 min' WHEN duration_minutes < 15 THEN '5-15 min'
-        WHEN duration_minutes < 30 THEN '15-30 min' WHEN duration_minutes < 60 THEN '30-60 min'
-        WHEN duration_minutes < 120 THEN '1-2 hrs' WHEN duration_minutes < 240 THEN '2-4 hrs'
-        WHEN duration_minutes < 480 THEN '4-8 hrs' ELSE '8+ hrs'
-      END as bucket,
-      CASE
-        WHEN duration_minutes < 5 THEN 0 WHEN duration_minutes < 15 THEN 1
-        WHEN duration_minutes < 30 THEN 2 WHEN duration_minutes < 60 THEN 3
-        WHEN duration_minutes < 120 THEN 4 WHEN duration_minutes < 240 THEN 5
-        WHEN duration_minutes < 480 THEN 6 ELSE 7
-      END as bucket_order,
-      COUNT(*) as count
-    FROM charging_sessions WHERE is_complete = TRUE AND duration_minutes >= 0 AND ${cleanFilter}
-    GROUP BY bucket, bucket_order ORDER BY bucket_order
-  `);
-
-  const fChargeHist = await queryCharging(`
-    WITH ordered_sessions AS (
-      SELECT *,
-        LAG(disconnect_time) OVER (PARTITION BY user_id ORDER BY connect_time) as prev_disconnect_time
-      FROM charging_sessions
-      WHERE is_complete = TRUE AND ${cleanFilter}
-    ),
-    merge_flags AS (
-      SELECT *,
-        CASE WHEN prev_disconnect_time IS NOT NULL
-          AND EXTRACT(EPOCH FROM (connect_time - prev_disconnect_time)) / 60.0 <= 5
-          THEN 0 ELSE 1 END as is_new_group
-      FROM ordered_sessions
-    ),
-    groups AS (
-      SELECT *,
-        SUM(is_new_group) OVER (PARTITION BY user_id ORDER BY connect_time ROWS UNBOUNDED PRECEDING) as grp
-      FROM merge_flags
-    ),
-    merged AS (
-      SELECT user_id, grp,
-        MAX(end_percentage) - MIN(start_percentage) as charge_gained,
-        COUNT(*) as sessions_in_group
-      FROM groups
-      GROUP BY user_id, grp
+      WHERE user_id IN (SELECT user_id FROM filtered_users)
     )
     SELECT
-      CASE
-        WHEN charge_gained >= 0 AND charge_gained <= 10 THEN '0-10%'
-        WHEN charge_gained <= 20 THEN '10-20%'
-        WHEN charge_gained <= 30 THEN '20-30%'
-        WHEN charge_gained <= 40 THEN '30-40%'
-        WHEN charge_gained <= 50 THEN '40-50%'
-        WHEN charge_gained <= 60 THEN '50-60%'
-        WHEN charge_gained <= 70 THEN '60-70%'
-        WHEN charge_gained <= 80 THEN '70-80%'
-        WHEN charge_gained <= 90 THEN '80-90%'
-        WHEN charge_gained <= 100 THEN '90-100%'
-      END as bucket,
-      CASE
-        WHEN charge_gained >= 0 AND charge_gained <= 10 THEN 0
-        WHEN charge_gained <= 20 THEN 1
-        WHEN charge_gained <= 30 THEN 2
-        WHEN charge_gained <= 40 THEN 3
-        WHEN charge_gained <= 50 THEN 4
-        WHEN charge_gained <= 60 THEN 5
-        WHEN charge_gained <= 70 THEN 6
-        WHEN charge_gained <= 80 THEN 7
-        WHEN charge_gained <= 90 THEN 8
-        WHEN charge_gained <= 100 THEN 9
-      END as bucket_order,
-      COUNT(*) as count
-    FROM merged
-    WHERE charge_gained >= 0 AND charge_gained <= 100
-    GROUP BY bucket, bucket_order ORDER BY bucket_order
+      a.total_users as full_users, a.total_sessions as full_sessions, a.complete_sessions as full_complete,
+      a.avg_duration as full_avg_duration, a.median_duration as full_median_duration,
+      a.avg_charge as full_avg_charge, a.avg_connect as full_avg_connect, a.avg_disconnect as full_avg_disconnect,
+      f.total_users as filt_users, f.total_sessions as filt_sessions, f.complete_sessions as filt_complete,
+      f.avg_duration as filt_avg_duration, f.median_duration as filt_median_duration,
+      f.avg_charge as filt_avg_charge, f.avg_connect as filt_avg_connect, f.avg_disconnect as filt_avg_disconnect
+    FROM all_stats a, filt_stats f
   `);
 
-  const fChargeHist_mergeStats = await queryCharging(`
-    WITH ordered_sessions AS (
-      SELECT *,
-        LAG(disconnect_time) OVER (PARTITION BY user_id ORDER BY connect_time) as prev_disconnect_time
-      FROM charging_sessions
-      WHERE is_complete = TRUE AND ${cleanFilter}
-    ),
-    merge_flags AS (
-      SELECT *,
-        CASE WHEN prev_disconnect_time IS NOT NULL
-          AND EXTRACT(EPOCH FROM (connect_time - prev_disconnect_time)) / 60.0 <= 5
-          THEN 0 ELSE 1 END as is_new_group
-      FROM ordered_sessions
-    ),
-    groups AS (
-      SELECT *,
-        SUM(is_new_group) OVER (PARTITION BY user_id ORDER BY connect_time ROWS UNBOUNDED PRECEDING) as grp
-      FROM merge_flags
-    ),
-    merged AS (
-      SELECT user_id, grp,
-        MAX(end_percentage) - MIN(start_percentage) as charge_gained,
-        COUNT(*) as sessions_in_group
-      FROM groups
-      GROUP BY user_id, grp
-    )
-    SELECT
-      (SELECT COUNT(*) FROM charging_sessions WHERE is_complete = TRUE AND ${cleanFilter}) as original_sessions,
-      COUNT(*) as merged_sessions,
-      (SELECT COUNT(*) FROM charging_sessions WHERE is_complete = TRUE AND ${cleanFilter}) - COUNT(*) as sessions_merged_away,
-      COUNT(*) FILTER (WHERE charge_gained < 0) as negative_excluded,
-      COUNT(*) FILTER (WHERE charge_gained > 100) as above_100_excluded,
-      COUNT(*) FILTER (WHERE charge_gained >= 0 AND charge_gained <= 100) as sessions_in_chart
-    FROM merged
-  `);
-
-  const fConnectHist = await queryCharging(`
-    SELECT (FLOOR(start_percentage / 10) * 10)::int as level_bucket, COUNT(*) as count
-    FROM charging_sessions WHERE ${cleanFilter}
-    GROUP BY level_bucket ORDER BY level_bucket
-  `);
-
-  const fDisconnectHist = await queryCharging(`
-    SELECT (FLOOR(end_percentage / 10) * 10)::int as level_bucket, COUNT(*) as count
-    FROM charging_sessions WHERE is_complete = TRUE AND ${cleanFilter}
-    GROUP BY level_bucket ORDER BY level_bucket
-  `);
-
-  // Hourly pattern for filtered
-  const fHourly = await queryCharging(`
-    SELECT EXTRACT(HOUR FROM connect_time)::int as hour,
-      COUNT(*) as session_count,
-      ROUND(AVG(start_percentage)::numeric, 1) as avg_start_level,
-      ROUND(AVG(charge_gained) FILTER (WHERE is_complete = TRUE AND charge_gained >= 0)::numeric, 1) as avg_charge_gained
-    FROM charging_sessions WHERE ${cleanFilter}
-    GROUP BY hour ORDER BY hour
-  `);
-
-  // Daily frequency for filtered
-  const fDailyFreqDist = await queryCharging(`
-    WITH daily_counts AS (
-      SELECT user_id, DATE(connect_time) as day, COUNT(*) as charges_per_day
-      FROM charging_sessions WHERE ${cleanFilter} GROUP BY user_id, DATE(connect_time)
-    )
-    SELECT charges_per_day, COUNT(*) as frequency
-    FROM daily_counts GROUP BY charges_per_day ORDER BY charges_per_day
-  `);
-  const fDailyFreqStats = await queryCharging(`
-    WITH daily_counts AS (
-      SELECT user_id, DATE(connect_time) as day, COUNT(*) as charges_per_day
-      FROM charging_sessions WHERE ${cleanFilter} GROUP BY user_id, DATE(connect_time)
-    )
-    SELECT
-      ROUND(AVG(charges_per_day)::numeric, 2) as mean,
-      ROUND(PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY charges_per_day)::numeric, 1) as median,
-      ROUND(STDDEV(charges_per_day)::numeric, 2) as stddev,
-      COUNT(*) as total_user_days
-    FROM daily_counts
-  `);
-
-  // Scatter plots for filtered
-  const fScatter1 = await queryCharging(`
-    SELECT start_percentage, charge_gained, duration_minutes
-    FROM charging_sessions
-    WHERE is_complete = TRUE AND charge_gained >= 0 AND ${cleanFilter}
-    ORDER BY RANDOM() LIMIT 2000
-  `);
-  const fScatter2 = await queryCharging(`
-    SELECT duration_minutes, charge_gained, start_percentage
-    FROM charging_sessions
-    WHERE is_complete = TRUE AND duration_minutes >= 0 AND charge_gained >= 0 AND ${cleanFilter}
-    ORDER BY RANDOM() LIMIT 2000
-  `);
-
-  // Battery Tide for filtered data
-  const fBatteryTide = await queryCharging(`
-    SELECT
-      hour,
-      ROUND(AVG(avg_level)::numeric, 1) as avg_battery_level,
-      COUNT(*) as user_count
-    FROM (
-      SELECT
-        EXTRACT(HOUR FROM connect_time)::int as hour,
-        AVG(start_percentage) as avg_level
-      FROM charging_sessions
-      WHERE connect_time IS NOT NULL AND ${cleanFilter}
-      GROUP BY user_id, EXTRACT(HOUR FROM connect_time)::int
-    ) per_user_hour
-    GROUP BY hour
-    ORDER BY hour
-  `);
-
-  // Transition Matrix for filtered data
-  const fTransitionMatrix = await queryCharging(`
-    SELECT
-      (FLOOR(start_percentage / 10) * 10)::int as start_bucket,
-      (FLOOR(LEAST(end_percentage, 100) / 10) * 10)::int as end_bucket,
-      COUNT(*) as count
-    FROM charging_sessions
-    WHERE is_complete = TRUE AND start_percentage >= 0 AND end_percentage >= 0 AND ${cleanFilter}
-    GROUP BY start_bucket, end_bucket
-    ORDER BY start_bucket, end_bucket
-  `);
+  // Build filtered analysis block
+  const filteredBlock = await buildAnalysisBlock(cleanFilter);
 
   return {
     mismatchDist: mismatchDist.rows,
     obsDist: obsDist.rows,
-    obsStats: obsStats.rows[0],
-    filterFunnel: filterFunnel.rows[0],
+    obsStats: obsStats.rows[0] || { avg_days: 0, median_days: 0, min_days: 0, max_days: 0 },
+    filterFunnel: funnel.rows[0] || { all_users: 0, mismatch_pass: 0, obs_pass: 0, both_pass: 0 },
     comparison: comparison.rows[0],
     filteredAnalysis: {
-      boxPlots: {
-        connectLevel: fConnectBox,
-        disconnectLevel: fDisconnectBox,
-        duration: fDurationBox,
-        chargeGained: fChargeBox,
+      boxPlots: filteredBlock.boxPlots,
+      cdfs: filteredBlock.cdfs,
+      histograms: filteredBlock.histograms,
+      hourlyPattern: filteredBlock.hourlyPattern,
+      dailyFrequency: filteredBlock.dailyFrequency,
+      scatterPlots: filteredBlock.scatterPlots,
+      batteryTide: filteredBlock.batteryTide,
+      transitionMatrix: filteredBlock.transitionMatrix,
+    },
+  };
+}
+
+// ─── Additional Analysis ────────────────────────────────────────────────────
+
+export async function getAdditionalAnalysis() {
+  const cleanFilter = `user_id IN (
+    SELECT user_id FROM user_stats us
+    WHERE event_mismatch <= 10
+      AND (
+        SELECT COUNT(DISTINCT DATE(event_timestamp))
+        FROM charging_events ce
+        WHERE ce.user_id = us.user_id
+      ) >= 8
+  )`;
+
+  // 1. Correlation & Regression: start_percentage vs charge_gained
+  const startVsChargeData = await queryCharging(`
+    SELECT start_percentage, charge_gained
+    FROM charging_sessions
+    WHERE is_complete = TRUE AND charge_gained >= 0 AND ${cleanFilter}
+    ORDER BY RANDOM() LIMIT 2000
+  `);
+
+  // Compute regression server-side
+  const regressionSQL = (xCol: string, yCol: string, extraFilter: string) => `
+    SELECT
+      REGR_SLOPE(${yCol}::numeric, ${xCol}::numeric) as slope,
+      REGR_INTERCEPT(${yCol}::numeric, ${xCol}::numeric) as intercept,
+      CORR(${xCol}::numeric, ${yCol}::numeric) as correlation,
+      POWER(CORR(${xCol}::numeric, ${yCol}::numeric), 2) as r2
+    FROM charging_sessions
+    WHERE is_complete = TRUE AND charge_gained >= 0 AND ${cleanFilter} ${extraFilter}
+  `;
+
+  const startVsChargeReg = await queryCharging(regressionSQL('start_percentage', 'charge_gained', ''));
+  const sr = startVsChargeReg.rows[0] as any;
+
+  // 2. Duration vs Charge Gained
+  const durationVsChargeData = await queryCharging(`
+    SELECT duration_minutes, charge_gained
+    FROM charging_sessions
+    WHERE is_complete = TRUE AND charge_gained >= 0 AND duration_minutes >= 0 AND duration_minutes <= 150 AND ${cleanFilter}
+    ORDER BY RANDOM() LIMIT 2000
+  `);
+  const durationVsChargeReg = await queryCharging(regressionSQL('duration_minutes', 'charge_gained', 'AND duration_minutes >= 0 AND duration_minutes <= 150'));
+  const dr = durationVsChargeReg.rows[0] as any;
+
+  // 3. User Clustering
+  const userAverages = await queryCharging(`
+    WITH user_daily AS (
+      SELECT user_id, COUNT(DISTINCT DATE(connect_time)) as days,
+        COUNT(*) as total_sessions
+      FROM charging_sessions WHERE ${cleanFilter}
+      GROUP BY user_id
+    )
+    SELECT
+      s.user_id,
+      ROUND(AVG(s.start_percentage)::numeric, 1) as avg_start,
+      ROUND(AVG(s.duration_minutes) FILTER (WHERE s.is_complete)::numeric, 1) as avg_duration,
+      ROUND(AVG(s.charge_gained) FILTER (WHERE s.is_complete AND s.charge_gained >= 0)::numeric, 1) as avg_charge,
+      COUNT(*) as session_count,
+      ROUND((COUNT(*)::numeric / GREATEST(ud.days, 1)), 2) as avg_charges_per_day
+    FROM charging_sessions s
+    JOIN user_daily ud ON s.user_id = ud.user_id
+    WHERE s.user_id IN (
+      SELECT us2.user_id FROM user_stats us2
+      WHERE us2.event_mismatch <= 10
+        AND (
+          SELECT COUNT(DISTINCT DATE(event_timestamp))
+          FROM charging_events ce2
+          WHERE ce2.user_id = us2.user_id
+        ) >= 8
+    )
+    GROUP BY s.user_id, ud.days
+    ORDER BY s.user_id
+  `);
+
+  // Simple rule-based clustering
+  const clusteredUsers = (userAverages.rows as any[]).map(u => {
+    let cluster: string, label: string, color: string;
+    const avgStart = Number(u.avg_start);
+    const avgDuration = Number(u.avg_duration || 0);
+
+    if (avgStart < 30) {
+      cluster = 'deep'; label = 'Deep Discharger'; color = '#ef4444';
+    } else if (avgStart > 60 && avgDuration < 60) {
+      cluster = 'topoff'; label = 'Top-off Charger'; color = '#3b82f6';
+    } else {
+      cluster = 'moderate'; label = 'Moderate Charger'; color = '#22c55e';
+    }
+    return { ...u, cluster, cluster_label: label, cluster_color: color };
+  });
+
+  const clusterCounts = ['deep', 'topoff', 'moderate'].map(c => {
+    const items = clusteredUsers.filter(u => u.cluster === c);
+    const first = items[0];
+    return {
+      cluster: c,
+      label: first?.cluster_label || c,
+      color: first?.cluster_color || '#888',
+      count: items.length,
+    };
+  }).filter(c => c.count > 0);
+
+  // 4. Weekday vs Weekend
+  const weekdayVsWeekend = await queryCharging(`
+    SELECT
+      EXTRACT(HOUR FROM connect_time)::int as hour,
+      COUNT(*) FILTER (WHERE EXTRACT(DOW FROM connect_time) BETWEEN 1 AND 5) as weekday,
+      COUNT(*) FILTER (WHERE EXTRACT(DOW FROM connect_time) IN (0, 6)) as weekend
+    FROM charging_sessions
+    WHERE is_complete = TRUE AND ${cleanFilter}
+    GROUP BY hour ORDER BY hour
+  `);
+
+  // 5. First vs Last Charge of Day
+  const firstLastQuery = await queryCharging(`
+    WITH ranked AS (
+      SELECT user_id, DATE(connect_time) as day,
+        start_percentage, duration_minutes, charge_gained,
+        ROW_NUMBER() OVER (PARTITION BY user_id, DATE(connect_time) ORDER BY connect_time ASC) as rn_first,
+        ROW_NUMBER() OVER (PARTITION BY user_id, DATE(connect_time) ORDER BY connect_time DESC) as rn_last
+      FROM charging_sessions
+      WHERE is_complete = TRUE AND ${cleanFilter}
+    )
+    SELECT
+      ROUND(AVG(start_percentage) FILTER (WHERE rn_first = 1)::numeric, 1) as first_avg_start,
+      ROUND(AVG(duration_minutes) FILTER (WHERE rn_first = 1)::numeric, 1) as first_avg_duration,
+      ROUND(AVG(charge_gained) FILTER (WHERE rn_first = 1 AND charge_gained >= 0)::numeric, 1) as first_avg_charge,
+      COUNT(*) FILTER (WHERE rn_first = 1) as first_count,
+      ROUND(AVG(start_percentage) FILTER (WHERE rn_last = 1)::numeric, 1) as last_avg_start,
+      ROUND(AVG(duration_minutes) FILTER (WHERE rn_last = 1)::numeric, 1) as last_avg_duration,
+      ROUND(AVG(charge_gained) FILTER (WHERE rn_last = 1 AND charge_gained >= 0)::numeric, 1) as last_avg_charge,
+      COUNT(*) FILTER (WHERE rn_last = 1) as last_count
+    FROM ranked
+  `);
+  const fl = firstLastQuery.rows[0] as any;
+
+  // First vs Last distribution by start level buckets
+  const firstLastDist = await queryCharging(`
+    WITH ranked AS (
+      SELECT user_id, DATE(connect_time) as day, start_percentage,
+        ROW_NUMBER() OVER (PARTITION BY user_id, DATE(connect_time) ORDER BY connect_time ASC) as rn_first,
+        ROW_NUMBER() OVER (PARTITION BY user_id, DATE(connect_time) ORDER BY connect_time DESC) as rn_last
+      FROM charging_sessions
+      WHERE is_complete = TRUE AND ${cleanFilter}
+    ),
+    buckets AS (
+      SELECT
+        CASE
+          WHEN start_percentage < 10 THEN '0-10%'
+          WHEN start_percentage < 20 THEN '10-20%'
+          WHEN start_percentage < 30 THEN '20-30%'
+          WHEN start_percentage < 40 THEN '30-40%'
+          WHEN start_percentage < 50 THEN '40-50%'
+          WHEN start_percentage < 60 THEN '50-60%'
+          WHEN start_percentage < 70 THEN '60-70%'
+          WHEN start_percentage < 80 THEN '70-80%'
+          WHEN start_percentage < 90 THEN '80-90%'
+          ELSE '90-100%'
+        END as bucket,
+        rn_first,
+        rn_last
+      FROM ranked
+    )
+    SELECT bucket,
+      COUNT(*) FILTER (WHERE rn_first = 1) as first,
+      COUNT(*) FILTER (WHERE rn_last = 1) as last
+    FROM buckets
+    GROUP BY bucket
+    ORDER BY bucket
+  `);
+
+  // 6. Inter-Charge Interval
+  const interChargeInterval = await queryCharging(`
+    WITH session_gaps AS (
+      SELECT
+        EXTRACT(EPOCH FROM (connect_time - LAG(disconnect_time) OVER (PARTITION BY user_id ORDER BY connect_time))) / 3600.0 as gap_hours
+      FROM charging_sessions
+      WHERE ${cleanFilter}
+    )
+    SELECT
+      CASE
+        WHEN gap_hours < 1 THEN '< 1 hr'
+        WHEN gap_hours < 2 THEN '1-2 hrs'
+        WHEN gap_hours < 4 THEN '2-4 hrs'
+        WHEN gap_hours < 6 THEN '4-6 hrs'
+        WHEN gap_hours < 8 THEN '6-8 hrs'
+        WHEN gap_hours < 12 THEN '8-12 hrs'
+        WHEN gap_hours < 24 THEN '12-24 hrs'
+        ELSE '24+ hrs'
+      END as bucket,
+      CASE
+        WHEN gap_hours < 1 THEN 0 WHEN gap_hours < 2 THEN 1
+        WHEN gap_hours < 4 THEN 2 WHEN gap_hours < 6 THEN 3
+        WHEN gap_hours < 8 THEN 4 WHEN gap_hours < 12 THEN 5
+        WHEN gap_hours < 24 THEN 6 ELSE 7
+      END as bucket_order,
+      COUNT(*) as count
+    FROM session_gaps
+    WHERE gap_hours IS NOT NULL AND gap_hours > 0 AND gap_hours < 72
+    GROUP BY bucket, bucket_order ORDER BY bucket_order
+  `);
+
+  // 7. Battery Health: Depth of Discharge
+  const depthOfDischarge = await queryCharging(`
+    SELECT
+      CASE
+        WHEN (100 - start_percentage) < 10 THEN '0-10%'
+        WHEN (100 - start_percentage) < 20 THEN '10-20%'
+        WHEN (100 - start_percentage) < 30 THEN '20-30%'
+        WHEN (100 - start_percentage) < 40 THEN '30-40%'
+        WHEN (100 - start_percentage) < 50 THEN '40-50%'
+        WHEN (100 - start_percentage) < 60 THEN '50-60%'
+        WHEN (100 - start_percentage) < 70 THEN '60-70%'
+        WHEN (100 - start_percentage) < 80 THEN '70-80%'
+        WHEN (100 - start_percentage) < 90 THEN '80-90%'
+        ELSE '90-100%'
+      END as bucket,
+      CASE
+        WHEN (100 - start_percentage) < 10 THEN 0 WHEN (100 - start_percentage) < 20 THEN 1
+        WHEN (100 - start_percentage) < 30 THEN 2 WHEN (100 - start_percentage) < 40 THEN 3
+        WHEN (100 - start_percentage) < 50 THEN 4 WHEN (100 - start_percentage) < 60 THEN 5
+        WHEN (100 - start_percentage) < 70 THEN 6 WHEN (100 - start_percentage) < 80 THEN 7
+        WHEN (100 - start_percentage) < 90 THEN 8 ELSE 9
+      END as bucket_order,
+      COUNT(*) as count
+    FROM charging_sessions
+    WHERE ${cleanFilter}
+    GROUP BY bucket, bucket_order ORDER BY bucket_order
+  `);
+
+  // High SoC Time (sessions ending at 90%+)
+  const highSoCTime = await queryCharging(`
+    SELECT
+      CASE
+        WHEN end_percentage < 90 THEN 'Below 90%'
+        WHEN end_percentage < 95 THEN '90-95%'
+        WHEN end_percentage < 100 THEN '95-99%'
+        ELSE '100%'
+      END as bucket,
+      CASE
+        WHEN end_percentage < 90 THEN 0
+        WHEN end_percentage < 95 THEN 1
+        WHEN end_percentage < 100 THEN 2
+        ELSE 3
+      END as bucket_order,
+      COUNT(*) as count
+    FROM charging_sessions
+    WHERE is_complete = TRUE AND ${cleanFilter}
+    GROUP BY bucket, bucket_order
+    ORDER BY bucket_order
+  `);
+
+  return {
+    correlationRegression: {
+      startVsCharge: {
+        data: startVsChargeData.rows,
+        slope: Number(sr?.slope || 0),
+        intercept: Number(sr?.intercept || 0),
+        r2: Number(sr?.r2 || 0),
+        correlation: Number(sr?.correlation || 0),
       },
-      cdfs: {
-        levelCdf: sample(fLevelCdf.rows as any),
-        durationCdf: sample(fDurCdf.rows as any),
-        chargeCdf: sample(fChargeCdf.rows as any),
+      durationVsCharge: {
+        data: durationVsChargeData.rows,
+        slope: Number(dr?.slope || 0),
+        intercept: Number(dr?.intercept || 0),
+        r2: Number(dr?.r2 || 0),
+        correlation: Number(dr?.correlation || 0),
       },
-      histograms: {
-        duration: fDurHist.rows,
-        chargeGained: fChargeHist.rows,
-        chargeGainedMergeStats: fChargeHist_mergeStats.rows[0],
-        connectLevel: fConnectHist.rows,
-        disconnectLevel: fDisconnectHist.rows,
+    },
+    userClustering: {
+      users: clusteredUsers,
+      clusterSummary: clusterCounts,
+    },
+    weekdayVsWeekend: weekdayVsWeekend.rows,
+    firstVsLastCharge: {
+      stats: {
+        first: {
+          avg_start: Number(fl?.first_avg_start || 0),
+          avg_duration: Number(fl?.first_avg_duration || 0),
+          avg_charge: Number(fl?.first_avg_charge || 0),
+          count: Number(fl?.first_count || 0),
+        },
+        last: {
+          avg_start: Number(fl?.last_avg_start || 0),
+          avg_duration: Number(fl?.last_avg_duration || 0),
+          avg_charge: Number(fl?.last_avg_charge || 0),
+          count: Number(fl?.last_count || 0),
+        },
       },
-      hourlyPattern: fHourly.rows,
-      dailyFrequency: {
-        distribution: fDailyFreqDist.rows,
-        stats: fDailyFreqStats.rows[0],
-      },
-      scatterPlots: {
-        startVsCharge: fScatter1.rows,
-        durationVsCharge: fScatter2.rows,
-      },
-      batteryTide: fBatteryTide.rows,
-      transitionMatrix: fTransitionMatrix.rows,
+      distribution: firstLastDist.rows,
+    },
+    interChargeInterval: interChargeInterval.rows,
+    batteryHealth: {
+      depthOfDischarge: depthOfDischarge.rows,
+      highSoCTime: highSoCTime.rows,
     },
   };
 }

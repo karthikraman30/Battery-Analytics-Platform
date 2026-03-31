@@ -26,6 +26,7 @@ import { DeepAnalysisTab } from './DeepAnalysisTab'
 import { CleanDataTab } from './CleanDataTab'
 import { FullDatasetTab } from './FullDatasetTab'
 import { FilteredDatasetTab } from './FilteredDatasetTab'
+import { AdditionalAnalysisTab } from './AdditionalAnalysisTab'
 
 const TABS = [
     { id: 'overview', label: 'Overview' },
@@ -38,6 +39,7 @@ const TABS = [
     { id: 'clean', label: 'Clean Data' },
     { id: 'full-dataset', label: 'Full Dataset' },
     { id: 'filtered-dataset', label: 'Filtered Dataset' },
+    { id: 'additional-analysis', label: 'Additional Analysis' },
 ]
 
 
@@ -65,6 +67,7 @@ export function ChargingDataDashboard() {
             {activeTab === 'clean' && <CleanDataTab />}
             {activeTab === 'full-dataset' && <FullDatasetTab />}
             {activeTab === 'filtered-dataset' && <FilteredDatasetTab />}
+            {activeTab === 'additional-analysis' && <AdditionalAnalysisTab />}
         </div>
     )
 }

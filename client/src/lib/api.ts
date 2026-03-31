@@ -406,6 +406,7 @@ export const chargingApi = {
   getCleanAnalysis: () => fetchChargingApi<CleanDataAnalysis>('/clean-analysis'),
   getFullDataset: () => fetchChargingApi<FullDatasetAnalysis>('/full-dataset'),
   getFilteredDataset: () => fetchChargingApi<FilteredDatasetAnalysis>('/filtered-dataset'),
+  getAdditionalAnalysis: () => fetchChargingApi<AdditionalAnalysis>('/additional-analysis'),
 };
 
 // ─── Charging Data Types ────────────────────────────────────────────────────
@@ -670,6 +671,54 @@ export interface FilteredDatasetAnalysis {
     };
     batteryTide: { hour: number; avg_battery_level: number; user_count: number }[];
     transitionMatrix: { start_bucket: number; end_bucket: number; count: number }[];
+  };
+}
+
+// ─── Additional Analysis Types ───────────────────────────────────────────────
+
+export interface AdditionalAnalysis {
+  correlationRegression: {
+    startVsCharge: {
+      data: { start_percentage: number; charge_gained: number }[];
+      slope: number;
+      intercept: number;
+      r2: number;
+      correlation: number;
+    };
+    durationVsCharge: {
+      data: { duration_minutes: number; charge_gained: number }[];
+      slope: number;
+      intercept: number;
+      r2: number;
+      correlation: number;
+    };
+  };
+  userClustering: {
+    users: {
+      user_id: number;
+      avg_start: number;
+      avg_duration: number;
+      avg_charge: number;
+      session_count: number;
+      avg_charges_per_day: number;
+      cluster: string;
+      cluster_label: string;
+      cluster_color: string;
+    }[];
+    clusterSummary: { cluster: string; label: string; color: string; count: number }[];
+  };
+  weekdayVsWeekend: { hour: number; weekday: number; weekend: number }[];
+  firstVsLastCharge: {
+    stats: {
+      first: { avg_start: number; avg_duration: number; avg_charge: number; count: number };
+      last: { avg_start: number; avg_duration: number; avg_charge: number; count: number };
+    };
+    distribution: { bucket: string; first: number; last: number }[];
+  };
+  interChargeInterval: { bucket: string; bucket_order: number; count: number }[];
+  batteryHealth: {
+    depthOfDischarge: { bucket: string; bucket_order: number; count: number }[];
+    highSoCTime: { bucket: string; count: number }[];
   };
 }
 

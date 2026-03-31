@@ -151,4 +151,10 @@ export const chargingRoutes = new Elysia({ prefix: '/api/charging' })
     .get('/filtered-dataset', async () => {
         const data = await chargingService.getFilteredDatasetAnalysis();
         return { data };
+    })
+
+    // Additional analysis (correlation, clustering, weekday vs weekend, etc.)
+    .get('/additional-analysis', async () => {
+        const data = await chargingService.getAdditionalAnalysis();
+        return { data };
     });
